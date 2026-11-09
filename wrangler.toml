@@ -1,0 +1,43 @@
+name = "battleship-online"
+main = "worker/index.js"
+compatibility_date = "2026-11-01"
+
+# 靜態網站（public/）：大廳 index.html、新盤面 board.html、單機版 battleship.html
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# 每個房間金鑰 = 一個 Durable Object（SQLite 儲存，免費方案可用）
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# 房間數登記簿（全站單一實例）：每位使用者最多 3 個房間
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Registry"]
+
+# ---------------------------------------------------------------------------
+# 戰績存檔（R2）
+#   R2 需先在 Cloudflare Dashboard 啟用（R2 Object Storage → Get started），
+#   再建立 bucket，取消下面三行註解並重新部署即可。
+#   既有紀錄會保留（暫存於 Durable Object 的 SQLite），新舊資料會自動合併。
+#
+#   npx wrangler r2 bucket create battleship-archive
+#   npx wrangler r2 bucket create battleship-archive-dev
+#
+# [[r2_buckets]]
+# binding = "ARCHIVE"
+# bucket_name = "battleship-archive"
+# preview_bucket_name = "battleship-archive-dev"
+
+[observability]
+enabled = true
