@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>海戰棋 · 連線對戰</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='4.6' r='2'/%3E%3Cpath d='M12 6.6v11.9'/%3E%3Cpath d='M8.5 9.8h7'/%3E%3Cpath d='M5.2 13.2c0 3.4 2.9 5.3 6.8 5.3s6.8-1.9 6.8-5.3'/%3E%3Cpath d='M5.2 13.2 4 11.7M5.2 13.2l1.6-.4M18.8 13.2 20 11.7M18.8 13.2l-1.6-.4'/%3E%3Cpath d='M4 21.3c1-.9 2-.9 3 0s2 .9 3 0 2-.9 3 0 2 .9 3 0 2-.9 3 0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/board.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>海戰棋 · 連線</h1>
+    <button class="chip" id="roomChip" type="button" title="點擊複製房間金鑰，貼給朋友即可一起玩">—</button>
+    <a class="ib" id="archBtn" href="history.html" data-tip="戰績存檔" aria-label="戰績存檔"></a>
+    <button class="ib" id="helpBtn" data-tip="教學" aria-label="教學"></button>
+    <button class="ib danger" id="leaveBtn" data-tip="離開房間" aria-label="離開房間"></button>
+    <aside id="tut"><div class="bar"><b>遊戲規則</b><button class="ib" id="closeBtn" aria-label="關閉"></button></div><div class="body">
+      <div class="rule"><b>目標</b><p>雙方輪流猜對方船艦的位置，最先擊沉對方所有船艦的人獲勝。</p></div>
+      <div class="rule"><b>船艦</b><p>5×5 海域，每人 4 艘：3 格 ×1、2 格 ×2、1 格 ×1，共 8 格。橫放或直放，不可重疊，也不可相鄰（含斜角）。</p></div>
+      <div class="rule"><b>回合</b><p>由系統分配回合，點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
+      <div class="rule"><b>敵方海域圖示</b>
+        <div class="lg">
+          <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>落空：這一格沒有船</div>
+          <div><i class="sw"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3" fill="none" stroke="#2563eb" stroke-width="2.4"/></svg></i>命中：這一格有船（周圍不一定無船，只記這格）</div>
+          <div><i class="sw sunk"><svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 6l-2 5.8L22 14l-5.8.6L15 21l-3-4.2L9 21l-1.2-6.4L2 14l4-2.2L4 6l5.6 1.6z" fill="#fff"/></svg></i>擊沉：整艘船都命中</div>
+          <div><i class="sw ring"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>自動標註：擊沉後，船周圍一圈會自動變為落空</div>
+        </div>
+      </div>
+      <div class="rule"><b>我方海域圖示</b>
+        <div class="lg">
+          <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="#94a3b8" stroke-width="2.2"/></svg></i>對方開火落空</div>
+          <div><i class="sw"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#d2707b" stroke-width="2.6" stroke-linecap="round"/></svg></i>我方船艦被命中的那一格</div>
+        </div>
+      </div>
+      <div class="rule"><b>自動標註</b><p>擊沉一艘船後，其周圍一圈會自動標為落空，不需手動記憶。</p></div>
+      <div class="rule"><b>手動標註</b><p>開啟「標註模式」後可自行記錄推測的落空 / 命中 / 擊沉，不影響系統判定結果。</p></div>
+      <div class="rule"><b>通訊</b><p>右下角的氣泡是通訊視窗；有新訊息時會跳出小提示，點一下即可展開。</p></div>
+      <div class="rule"><b>介面導覽</b><p><a href="#" id="replayTour">重新播放介面導覽</a>，一步一步複習每個區塊的用法。</p></div>
+    </div></aside>
+  </header>
+
+  <!-- 頂部狀態：連線 / 回合 / 對戰玩家（1 : 4.5 : 4.5，單行呈現） -->
+  <div class="statusbar" id="statusbar">
+    <div class="sb sb-conn">
+      <span class="dot" id="connDot"></span>
+      <span id="connText">連線中…</span>
+    </div>
+    <div class="sb sb-turn">
+      <span id="turnText">—</span>
+    </div>
+    <div class="sb sb-players">
+      <div id="players"></div>
+    </div>
+  </div>
+
+  <section class="panel" id="ownPanel">
+    <div class="head">
+      <h2>我的海域</h2>
+      <span class="tag" id="ownHint"></span>
+      <div class="rulewrap" id="ruleBox" title="輪流交替：每次開火後換人；命中續打：命中或擊沉則繼續">
+        <select id="ruleSel" aria-label="回合規則">
+          <option value="alt">輪流交替</option>
+          <option value="keep">命中續打</option>
+        </select>
+      </div>
+    </div>
+    <div id="own" class="board"></div>
+    <div class="tools">
+      <div class="picker" id="picker"></div>
+      <button class="ib" id="lockShip" data-tip="鎖定船艦" aria-label="鎖定船艦"></button>
+      <button class="ib" id="rotBtn" data-tip="旋轉" aria-label="旋轉"></button>
+      <button class="ib" id="clrOwn" data-tip="清空" aria-label="清空"></button>
+    </div>
+  </section>
+
+  <section class="panel" id="enPanel">
+    <div class="head"><h2>敵方海域</h2><span class="tag" id="enemyHint"></span></div>
+    <div id="enemy" class="board"></div>
+    <div class="tools">
+      <button class="ib" id="annotateBtn" data-tip="標註模式" aria-label="標註模式"></button>
+      <button class="ib" id="clrMarks" data-tip="清除標註" aria-label="清除標註"></button>
+    </div>
+  </section>
+</main>
+
+<!-- 右下角通訊氣泡 -->
+<div class="chatdock" id="chatDock">
+  <div class="chatpop" id="chatPop" hidden>
+    <div class="bar">
+      <b>通訊</b>
+      <span class="tag" id="chatCount"></span>
+      <button class="ib" id="chatClose" aria-label="收合通訊"></button>
+    </div>
+    <div id="chatLog" class="chatlog"></div>
+    <form id="chatForm" class="chatform">
+      <input type="text" id="chatInput" placeholder="說點什麼…" maxlength="300" autocomplete="off">
+      <button class="btn primary" type="submit">送出</button>
+    </form>
+  </div>
+  <button class="chatfab" id="chatFab" aria-label="開啟通訊" aria-expanded="false">
+    <span class="ico" id="chatFabIco"></span>
+    <span class="badge" id="chatBadge" hidden>0</span>
+  </button>
+</div>
+
+<!-- 新訊息小提示（數秒後自動消失） -->
+<div class="chatnote" id="chatNote" role="status"></div>
+
+<div id="modal"><div class="mb result">
+  <button class="ib x" id="mn" aria-label="關閉"></button>
+  <p id="mt"></p>
+  <div id="resultBody"></div>
+  <div class="mr">
+    <a class="btn" id="archLink" href="history.html">戰績存檔</a>
+    <button class="btn good" id="rematchBtn">再戰一局</button>
+  </div>
+</div></div>
+<div id="ghost"></div>
+<div id="toast"></div>
+
+<!-- 聚光燈式介面導覽 -->
+<div id="tour">
+  <div id="tourSpot"></div>
+  <div id="tourCard">
+    <b id="tourT"></b>
+    <p id="tourD"></p>
+    <div class="tBtns"><span id="tourN"></span><button id="tourPrev">上一步</button><button id="tourSkip">跳過</button><button id="tourNext" class="pri">下一步</button></div>
+  </div>
+</div>
+
+<script type="module" src="js/board.js"></script>
+</body>
+</html>

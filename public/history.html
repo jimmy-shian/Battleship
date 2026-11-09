@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>海戰棋 · 戰績存檔</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='4.6' r='2'/%3E%3Cpath d='M12 6.6v11.9'/%3E%3Cpath d='M8.5 9.8h7'/%3E%3Cpath d='M5.2 13.2c0 3.4 2.9 5.3 6.8 5.3s6.8-1.9 6.8-5.3'/%3E%3Cpath d='M5.2 13.2 4 11.7M5.2 13.2l1.6-.4M18.8 13.2 20 11.7M18.8 13.2l-1.6-.4'/%3E%3Cpath d='M4 21.3c1-.9 2-.9 3 0s2 .9 3 0 2-.9 3 0 2 .9 3 0 2-.9 3 0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/history.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>海戰棋 · 戰績存檔</h1>
+    <a class="ib" id="backBtn" href="index.html" aria-label="回到大廳" title="回到大廳"></a>
+  </header>
+
+  <section class="panel">
+    <div class="head"><h2>查詢房間</h2></div>
+    <label class="field">
+      <span>房間金鑰（與對戰時相同）</span>
+      <div class="row grow">
+        <select id="roomInput">
+          <option value="ROOM1">Room1</option>
+          <option value="ROOM2">Room2</option>
+          <option value="ROOM3">Room3</option>
+        </select>
+        <button class="btn primary" id="qBtn" type="button">查詢</button>
+      </div>
+    </label>
+    <p class="hint" id="status" style="margin:10px 0 0">輸入房間金鑰即可查看該房間過往的對局紀錄。</p>
+  </section>
+
+  <section class="panel" id="listPanel" hidden>
+    <div class="head"><h2>對局紀錄</h2>
+      <span class="tag" id="count"></span>
+      <button class="btn danger sm" id="clearBtn" type="button">清空</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section class="panel" id="detailPanel" hidden>
+    <div class="head"><h2 id="dTitle">對局明細</h2><button class="ib" id="dClose" aria-label="關閉"></button></div>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script type="module" src="js/history.js"></script>
+</body>
+</html>

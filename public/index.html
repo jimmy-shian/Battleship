@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>海戰棋 · 雲端大廳</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='4.6' r='2'/%3E%3Cpath d='M12 6.6v11.9'/%3E%3Cpath d='M8.5 9.8h7'/%3E%3Cpath d='M5.2 13.2c0 3.4 2.9 5.3 6.8 5.3s6.8-1.9 6.8-5.3'/%3E%3Cpath d='M5.2 13.2 4 11.7M5.2 13.2l1.6-.4M18.8 13.2 20 11.7M18.8 13.2l-1.6-.4'/%3E%3Cpath d='M4 21.3c1-.9 2-.9 3 0s2 .9 3 0 2-.9 3 0 2 .9 3 0 2-.9 3 0'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/lobby.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>海戰棋 · 雲端大廳</h1>
+    <button class="ib" id="helpBtn" data-tip="說明" aria-label="說明"></button>
+  </header>
+
+  <section class="panel">
+    <div class="head"><h2>登入房間</h2></div>
+
+    <div class="field">
+      <span>房間（全系統固定三間，選一間進入）</span>
+      <select id="keySel">
+        <option value="ROOM1">Room1</option>
+        <option value="ROOM2">Room2</option>
+        <option value="ROOM3">Room3</option>
+      </select>
+    </div>
+
+    <label class="field">
+      <span>暱稱</span>
+      <input type="text" id="nameInput" placeholder="你的名字" maxlength="16" autocomplete="off">
+    </label>
+
+    <div class="field">
+      <span>回合規則</span>
+      <select id="ruleInput">
+        <option value="alt">輪流交替 — 每次開火後換人</option>
+        <option value="keep">命中續打 — 命中或擊沉則繼續，未中才換人</option>
+      </select>
+    </div>
+
+    <div class="tools" style="margin-top:16px">
+      <button class="btn primary block" id="enterBtn" type="button">進入房間</button>
+    </div>
+
+    <div class="tools">
+      <button class="btn" id="copyLink" type="button">複製邀請連結</button>
+      <button class="btn" id="copyKey" type="button">複製金鑰</button>
+    </div>
+
+    <p class="hint" id="statusLine" style="margin:12px 0 0">正在確認伺服器…</p>
+    <p class="hint" style="margin:8px 0 0">固定三間房：Room1／Room2／Room3，每間同時一場對戰（2 人），第三位進入會顯示「房間已滿」。戰績每間最多保留 <b>100 筆</b>，滿了由後端自動刪除最舊的紀錄；紀錄會顯示玩家名稱。</p>
+  </section>
+
+  <section class="panel" id="roomPanel" hidden>
+    <div class="head"><h2>房間狀態</h2></div>
+    <div id="roomInfo"></div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>說明</h2></div>
+    <ul class="steps">
+      <li><b>1.</b> 從「房間」下拉選 Room1／Room2／Room3 其中一間，兩人選同一間就會對戰。</li>
+      <li><b>2.</b> 各自在「我的海域」擺好 4 艘船並鎖定。</li>
+      <li><b>3.</b> 輪流在「敵方海域」點擊開火，點下去就會自動標記結果，由伺服器判定。</li>
+      <li><b>4.</b> 擊沉的船會<b>自動標註</b>周圍落空，全數擊沉即結算。</li>
+    </ul>
+    <div class="tools">
+      <a class="btn" href="battleship.html">單機版（可離線遊玩 / 紀錄）</a>
+      <a class="btn" href="history.html">戰績存檔</a>
+    </div>
+  </section>
+
+  <section class="panel" id="advPanel">
+    <div class="head">
+      <h2>進階設定</h2>
+      <button class="ib" id="advToggle" aria-label="展開/收合"></button>
+    </div>
+    <div id="advBody" hidden>
+      <label class="field">
+        <span>通訊伺服器網址（留空＝使用本站同網域）</span>
+        <input type="text" id="serverInput" placeholder="https://battleship-online.xxx.workers.dev" autocomplete="off" spellcheck="false">
+      </label>
+      <p class="hint">本機測試可填 <code>http://127.0.0.1:8787</code>（先執行 <code>npm run dev</code>）。</p>
+    </div>
+  </section>
+
+  <aside id="help" hidden>
+    <div class="bar"><b>遊戲規則</b><button class="ib" id="closeHelp" aria-label="關閉"></button></div>
+    <div class="body">
+      <div class="rule"><b>目標</b><p>雙方輪流猜對方船艦的位置，最先擊沉對方所有船艦的人獲勝。</p></div>
+      <div class="rule"><b>船艦</b><p>5×5 海域，每人 4 艘：3 格 ×1、2 格 ×2、1 格 ×1，共 8 格。橫放或直放，不可重疊，也不可相鄰（含斜角）。</p></div>
+      <div class="rule"><b>回合</b><p>由系統分配回合，點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
+      <div class="rule"><b>敵方海域圖示</b>
+        <div class="lg">
+          <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>落空：這一格沒有船</div>
+          <div><i class="sw"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3" fill="none" stroke="#2563eb" stroke-width="2.4"/></svg></i>命中：這一格有船（周圍不一定無船，只記這格）</div>
+          <div><i class="sw sunk"><svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 6l-2 5.8L22 14l-5.8.6L15 21l-3-4.2L9 21l-1.2-6.4L2 14l4-2.2L4 6l5.6 1.6z" fill="#fff"/></svg></i>擊沉：整艘船都命中</div>
+          <div><i class="sw ring"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>自動標註：擊沉後，船周圍一圈會自動變為落空</div>
+        </div>
+      </div>
+      <div class="rule"><b>我方海域圖示</b>
+        <div class="lg">
+          <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="#94a3b8" stroke-width="2.2"/></svg></i>對方開火落空</div>
+          <div><i class="sw"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#d2707b" stroke-width="2.6" stroke-linecap="round"/></svg></i>我方船艦被命中的那一格</div>
+        </div>
+      </div>
+      <div class="rule"><b>自動標註</b><p>擊沉一艘船後，其周圍一圈會自動標為落空，省去手動記憶。</p></div>
+      <div class="rule"><b>手動標註</b><p>開啟「標註模式」後可自行在敵方海域記錄推測的落空 / 命中 / 擊沉，不影響系統判定結果。</p></div>
+      <div class="rule"><b>結算</b><p>擊沉對方全部船艦即結束本局，顯示雙方出擊數、命中數與命中率，並可一鍵再戰。</p></div>
+    </div>
+  </aside>
+</main>
+
+<div id="toast"></div>
+
+<script type="module" src="js/lobby.js"></script>
+</body>
+</html>

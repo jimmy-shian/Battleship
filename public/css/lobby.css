@@ -1,0 +1,82 @@
+/* 海戰棋 — 大廳專用樣式 */
+main { padding-bottom: 20px; }
+
+.steps { margin: 4px 0 10px; padding-left: 20px; font-size: .88rem; line-height: 1.85; }
+.steps b { color: var(--ink); }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .82em; background: #64748b1f; padding: 1px 5px; border-radius: 5px;
+}
+
+a.btn { display: inline-block; text-decoration: none; }
+
+/* ---------- 我的房間 ---------- */
+#myRooms { display: flex; flex-direction: column; gap: 6px; }
+.myroom {
+  display: flex; align-items: center; gap: 8px; font-size: .84rem;
+  background: #64748b0f; border-radius: 10px; padding: 7px 10px;
+}
+.myroom .k { font-weight: 700; color: var(--acc); letter-spacing: .02em; }
+.myroom .n { color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myroom .t { color: var(--mut); font-size: .72rem; margin-left: auto; flex: none; }
+.myroom button {
+  border: 0; background: #dc6b7333; color: #d2707b; border-radius: 8px;
+  padding: 4px 9px; font-size: .74rem; font-weight: 600; font-family: inherit; cursor: pointer; flex: none;
+}
+.myroom button:hover { filter: brightness(1.06); }
+.myroom button:disabled { opacity: .4; cursor: default; }
+
+/* ---------- 房間上限選單 ---------- */
+.pick { min-width: min(330px, 88vw); text-align: left; }
+.pick > p:first-child { text-align: center; font-weight: 700; font-size: 1rem; }
+.pick .pkitem {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  border: 1px solid var(--line); background: #64748b0d; color: var(--ink);
+  border-radius: 10px; padding: 9px 11px; margin-bottom: 6px;
+  font-family: inherit; font-size: .86rem; cursor: pointer; text-align: left;
+  transition: border-color .15s, background .15s;
+}
+.pick .pkitem:hover { border-color: var(--acc); background: #3b82f60f; }
+.pick .pkitem .k { font-weight: 700; color: var(--acc); }
+.pick .pkitem .n { color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick .pkitem .go { margin-left: auto; font-size: .74rem; color: var(--mut); flex: none; }
+.pick .mr { justify-content: center; }
+
+#statusLine.ok { color: var(--green); }
+#statusLine.err { color: var(--red); }
+#statusLine.busy { color: var(--amber); }
+
+#roomInfo .rp { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: .9rem; }
+#roomInfo .rp + .rp { border-top: 1px solid var(--line); }
+#roomInfo .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mut); flex: none; }
+#roomInfo .dot.on { background: var(--green); }
+#roomInfo .dot.off { background: var(--mut); }
+#roomInfo .seat { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#roomInfo .tag { font-size: .72rem; color: var(--mut); flex: none; }
+#roomInfo .tag.ready { color: var(--green); font-weight: 600; }
+
+#advPanel .head { cursor: pointer; }
+#advPanel .ib { width: 32px; height: 32px; }
+#advPanel .ib svg { width: 17px; height: 17px; }
+#advToggle { transition: transform .2s; }
+#advPanel.open #advToggle { transform: rotate(180deg); }
+
+#help {
+  position: absolute; right: 0; top: 48px; z-index: 20;
+  width: min(310px, calc(100vw - 28px)); max-height: min(74vh, 540px);
+  background: var(--panel); border-radius: 16px; box-shadow: 0 8px 30px #0f172a38;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#help[hidden] { display: none; }
+#help .bar { display: flex; align-items: center; padding: 4px 4px 4px 14px; font-size: .95rem; }
+#help .bar b { flex: 1; }
+#help .ib { width: 32px; height: 32px; }
+#help .ib svg { width: 17px; height: 17px; }
+#help .body { overflow-y: auto; padding: 0 14px 14px; font-size: .86rem; line-height: 1.55; }
+
+.rule { margin-top: 12px; }
+.rule b { display: block; margin-bottom: 2px; }
+.rule p { margin: 0; opacity: .78; }
+
+body.dragging, body.dragging * { cursor: grabbing !important; }

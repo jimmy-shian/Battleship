@@ -1,0 +1,61 @@
+/* 海戰棋 — 戰績存檔頁 */
+header { flex-wrap: wrap; }
+header h1 { margin-right: auto; }
+
+#list { display: flex; flex-direction: column; gap: 8px; }
+
+.mcard {
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  background: #64748b0d; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.mcard:hover { border-color: var(--acc); background: #3b82f60f; }
+.mcard .top { display: flex; align-items: baseline; gap: 8px; font-size: .88rem; }
+.mcard .top b { font-weight: 700; }
+.mcard .top .time { color: var(--mut); font-size: .74rem; margin-left: auto; }
+.mcard .win { color: var(--green); font-weight: 700; }
+.mcard .lose { color: var(--mut); }
+.mcard .meta { margin-top: 4px; font-size: .76rem; color: var(--mut); display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- 明細 ---------- */
+#detail .row2 { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+#detail table { width: 100%; border-collapse: collapse; font-size: .84rem; margin: 10px 0; }
+#detail th, #detail td { padding: 6px 4px; text-align: center; border-bottom: 1px solid var(--line); }
+#detail th { color: var(--mut); font-weight: 600; font-size: .74rem; }
+#detail td.win { font-weight: 700; color: var(--green); }
+#detail td.lose { color: var(--mut); }
+#detail .kv { font-size: .78rem; color: var(--mut); display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+
+.replay { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin: 10px 0 4px; }
+.rp { text-align: center; }
+.rp .cap { font-size: .76rem; color: var(--mut); margin-bottom: 5px; }
+.rp .cap b { color: var(--ink); }
+.rp .cap .win { color: var(--green); }
+
+.hboard { display: grid; grid-template-columns: 16px repeat(5, minmax(0, 1fr)); gap: 3px; width: 160px; }
+.hboard .co { font-size: .78rem; font-weight: 700; color: var(--ink); opacity: .7; display: grid; place-items: center; }
+.hboard .hc {
+  aspect-ratio: 1; border-radius: 7px; background: #64748b14; position: relative;
+  display: grid; place-items: center;
+}
+.hboard .hc.ship { background: var(--ship); box-shadow: inset 0 0 0 1.5px #3b82f6aa; }
+.hboard .hc.hit { box-shadow: inset 0 0 0 2px #d2707b80; }
+.hboard .hc.miss { background: #64748b2a; }
+.hboard .hc.sunk { background: #96434b; }
+.hboard .hc svg { width: 58%; height: 58%; pointer-events: none; }
+
+.ctrl { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 0 2px; flex-wrap: wrap; }
+.ctrl .step { font-size: .78rem; color: var(--mut); min-width: 76px; text-align: center; }
+.ctrl button.cb {
+  border: 0; border-radius: 10px; padding: 8px 12px; font-size: .82rem; font-weight: 600;
+  background: #64748b1f; color: var(--ink); font-family: inherit; cursor: pointer;
+}
+.ctrl button.cb:hover { filter: brightness(1.06); }
+.ctrl button.cb.primary { background: var(--acc); color: #fff; }
+
+.shotlog { max-height: 150px; overflow-y: auto; font-size: .78rem; color: var(--mut); line-height: 1.7; }
+.shotlog .s { display: flex; gap: 8px; }
+.shotlog .s b { color: var(--ink); font-weight: 600; min-width: 72px; }
+.shotlog .s.hit { color: var(--acc); }
+.shotlog .s.miss { color: var(--mut); }
+
+.empty { text-align: center; color: var(--mut); font-size: .84rem; padding: 14px 0; }
