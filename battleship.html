@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>海戰棋</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='4.6' r='2'/%3E%3Cpath d='M12 6.6v11.9'/%3E%3Cpath d='M8.5 9.8h7'/%3E%3Cpath d='M5.2 13.2c0 3.4 2.9 5.3 6.8 5.3s6.8-1.9 6.8-5.3'/%3E%3Cpath d='M5.2 13.2 4 11.7M5.2 13.2l1.6-.4M18.8 13.2 20 11.7M18.8 13.2l-1.6-.4'/%3E%3Cpath d='M4 21.3c1-.9 2-.9 3 0s2 .9 3 0 2-.9 3 0 2 .9 3 0 2-.9 3 0'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#f4f6f9;--panel:#fff;--ink:#1f2937;--mut:#94a3b8;--line:#e2e8f0;--acc:#3b82f6;--ship:#93c5fd;--red:#ef4444}
+@media(prefers-color-scheme:dark){:root{--bg:#0f172a;--panel:#1e293b;--ink:#e2e8f0;--line:#334155;--ship:#3b6fb6}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{margin:0;padding:14px;background:var(--bg);color:var(--ink);font-family:system-ui,"Noto Sans TC",sans-serif;user-select:none;-webkit-user-select:none}
+body.dragging{cursor:grabbing}
+main{max-width:460px;margin:auto;scroll-snap-type:y proximity}
+header{display:flex;align-items:center;gap:6px;margin-bottom:14px;position:relative}
+h1{font-size:1.2rem;margin:0 auto 0 4px;font-weight:700}
+h2{font-size:.85rem;margin:0;color:var(--mut);font-weight:600;letter-spacing:.08em}
+.panel{background:var(--panel);padding:14px;border-radius:18px;margin-bottom:14px;box-shadow:0 2px 14px #0f172a0f}
+.head,.tools{display:flex;align-items:center;gap:6px}
+.head{justify-content:space-between;margin-bottom:10px}
+.tools{margin-top:12px;justify-content:center;flex-wrap:wrap}
+.ib{width:42px;height:42px;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:transparent;color:var(--ink);cursor:pointer;position:relative;transition:background .15s,transform .1s,opacity .15s}
+.ib svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ib:hover{background:#64748b22}.ib:active{transform:scale(.88)}.ib:disabled{opacity:.28;pointer-events:none}
+@media(hover:hover){.ib[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;background:#1f2937;color:#fff;font-size:.72rem;padding:3px 8px;border-radius:6px;white-space:nowrap;z-index:30;pointer-events:none}}
+a.ib{color:var(--ink);text-decoration:none}
+.picker{display:flex;gap:8px;align-items:center;flex:1;justify-content:center}
+.po{padding:6px;border-radius:12px;border:2px solid transparent;background:#64748b14;touch-action:none;cursor:grab;transition:.15s;display:grid}
+.po svg{display:block}.po.sel{border-color:var(--acc)}.po.placed{opacity:.45}
+.board{display:grid;grid-template-columns:26px repeat(5,minmax(0,1fr));gap:4px;width:100%}
+.co{display:grid;place-items:center;color:var(--ink);opacity:.75;font-size:1.15rem;font-weight:700}
+.cell{aspect-ratio:1;min-width:0;padding:0;position:relative;border:0;border-radius:10px;background:#64748b14;display:grid;place-items:center;cursor:pointer;touch-action:pan-y;transition:background .2s,transform .12s,opacity .2s,box-shadow .2s}
+.cell:active{transform:scale(.94)}
+.cell svg{width:62%;height:62%;pointer-events:none;animation:pop .22s ease-out}
+@keyframes pop{from{transform:scale(.4);opacity:0}}
+#own .cell.ship{background:var(--ship);touch-action:none;cursor:grab;box-shadow:inset 0 0 0 2px #3b82f6aa}
+#own .cell.sel{box-shadow:inset 0 0 0 2.5px var(--acc)}
+#own .cell.dim{opacity:.3}
+#own .cell.pv{background:#3b82f666}#own .cell.bad{background:#ef444455}
+.cell[data-v="2"]{background:#3b82f622}
+.cell[data-v="3"]{background:#b91c1c}
+.cell.locked{opacity:.62;cursor:default}
+.cell.locked::after{content:"";position:absolute;right:4px;bottom:4px;width:11px;height:11px;opacity:.7;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='3' stroke-linecap='round'%3E%3Crect x='5' y='11' width='14' height='9' rx='2'/%3E%3Cpath d='M8 11V8a4 4 0 0 1 8 0v3'/%3E%3C/svg%3E") no-repeat center/contain}
+.shake{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+#ghost{position:fixed;z-index:50;pointer-events:none;display:none;opacity:.6;gap:4px}
+#ghost i{border-radius:10px;background:var(--ship);box-shadow:inset 0 0 0 2px var(--acc)}
+#tut{position:absolute;right:0;top:48px;z-index:20;width:min(310px,calc(100vw - 28px));max-height:min(74vh,540px);background:var(--panel);border-radius:16px;box-shadow:0 8px 30px #0f172a38;display:flex;flex-direction:column;overflow:hidden;transform-origin:top right;transition:opacity .22s,transform .22s,visibility 0s}
+#tut.closed{opacity:0;transform:scale(.92) translateY(-8px);pointer-events:none;visibility:hidden;transition:opacity .22s,transform .22s,visibility 0s .22s}
+#tut.noanim{transition:none!important}
+#tut a{color:var(--acc);font-weight:600}
+#tut .bar{display:flex;align-items:center;padding:4px 4px 4px 14px;font-size:.95rem}
+#tut .bar b{flex:1}
+#tut .ib{width:32px;height:32px}#tut .ib svg{width:17px;height:17px}
+#tut .body{overflow-y:auto;padding:0 14px 14px;font-size:.86rem;line-height:1.55}
+.rule{margin-top:12px}.rule b{display:block;margin-bottom:2px}.rule p{margin:0;opacity:.75}
+.lg{display:flex;flex-direction:column;gap:7px;margin-top:6px;opacity:.85}
+.lg div{display:flex;align-items:center;gap:9px}
+.sw{flex:none;width:28px;height:28px;border-radius:8px;background:#64748b22;display:grid;place-items:center}.sw.red{background:#b91c1c}.sw svg{width:17px;height:17px}
+.hs{margin-top:12px;max-height:180px;overflow-y:auto;border-top:1px solid var(--line);padding-top:8px}
+.hr{display:grid;grid-template-columns:30px 40px 1fr 1fr;gap:4px;text-align:center;font-size:.85rem;padding:3px 0}.hr u{text-decoration:none;color:var(--mut)}
+.ib.on{background:#3b82f622;color:var(--acc)}
+#own.sl .cell.ship{touch-action:pan-y;cursor:pointer}
+#picker.off{opacity:.3;pointer-events:none}
+#modal{position:fixed;inset:0;display:none;place-items:center;background:#0f172a66;z-index:100}#modal.show{display:grid}
+.mb{background:var(--panel);padding:18px 22px;border-radius:16px;min-width:230px;text-align:center;box-shadow:0 10px 40px #0005}
+.mb p{margin:0 0 12px;font-size:1rem}.mr{display:flex;justify-content:center;gap:14px}#my{background:var(--acc);color:#fff}
+.gh{display:flex;justify-content:space-between;font-size:1rem;font-weight:600;margin-bottom:10px}
+.gr{display:grid;grid-template-columns:34px repeat(3,1fr);gap:8px 4px;text-align:center;font-size:1.1rem;align-items:center}
+.gr u{text-decoration:none;color:var(--mut);font-size:.8rem}.gr span{color:var(--mut);font-size:.9rem}
+#tour{position:fixed;inset:0;z-index:200;display:none}
+#tour.show{display:block}
+#tourSpot{position:absolute;border-radius:14px;border:2px solid var(--acc);box-shadow:0 0 0 200vmax #0f172ab3;transition:left .3s,top .3s,width .3s,height .3s,opacity .3s}
+#tourCard{position:absolute;width:min(300px,calc(100vw - 28px));background:var(--panel);border-radius:14px;padding:14px;box-shadow:0 10px 40px #0006;transition:left .3s,top .3s,opacity .3s}
+#tourCard b{display:block;font-size:.95rem;margin-bottom:4px}
+#tourCard p{margin:0 0 12px;font-size:.85rem;line-height:1.5;opacity:.85}
+#enemy .cell.demo{box-shadow:inset 0 0 0 2.5px var(--acc);animation:demoPulse 1.8s ease-in-out infinite}
+@keyframes demoPulse{50%{transform:scale(.9)}}
+.tBtns{display:flex;align-items:center;gap:8px;font-size:.8rem}
+.tBtns span{flex:1;color:var(--mut)}
+.tBtns button{border:0;border-radius:9px;padding:6px 12px;font-size:.82rem;cursor:pointer;background:#64748b22;color:var(--ink);font-family:inherit}
+.tBtns button.pri{background:var(--acc);color:#fff}
+#ownPanel,#enPanel{scroll-snap-align:start;scroll-margin-top:14px}
+#stats{scroll-snap-align:none;scroll-margin-top:14px;padding:3px 12px}
+#stats .head{margin-bottom:0}
+#stats:not(.closed) .head{margin-bottom:10px}
+#stats .ib{width:32px;height:32px}
+#stats .ib svg{width:17px;height:17px}
+#stats .sg{overflow:hidden;max-height:420px;opacity:1;transition:max-height .32s ease,opacity .25s ease,visibility 0s}
+#stats.closed .sg{max-height:0;opacity:0;visibility:hidden;transition:max-height .32s ease,opacity .25s ease,visibility 0s .3s}
+#stats .head{transition:margin-bottom .25s ease}
+#statToggle{transition:transform .2s}
+#stats.closed #statToggle{transform:rotate(180deg)}
+#stats{cursor:pointer}
+@media(prefers-reduced-motion:reduce){#stats .sg,#stats .head,#statToggle{transition:none}}
+@media(max-width:420px){body{padding:10px}.panel{padding:12px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>海戰棋</h1>
+  <button class="ib" id="undoBtn" data-tip="復原" aria-label="復原"></button>
+  <button class="ib" id="redoBtn" data-tip="重做" aria-label="重做"></button>
+  <a class="ib" id="lobbyBtn" href="index.html" data-tip="連線版大廳" aria-label="連線版大廳"><svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h9"/></svg></a>
+  <button class="ib" id="helpBtn" data-tip="教學" aria-label="教學"></button>
+  <aside id="tut"><div class="bar"><b>遊戲規則</b><button class="ib" id="closeBtn" aria-label="關閉"></button></div><div class="body">
+<div class="rule"><b>目標</b><p>雙方輪流猜對方船艦的位置，最先擊沉對方所有船艦的人獲勝。</p></div>
+<div class="rule"><b>船艦</b><p>5×5 海域，每人 4 艘：3 格 ×1、2 格 ×2、1 格 ×1，共 8 格。橫放或直放，不可重疊，也不可相鄰（含斜角）。</p></div>
+<div class="rule"><b>回合</b><p>輪流喊一個座標（例如 C4）。被問的一方回答「落空」、「命中」或「擊沉」。一艘船的每一格都被命中，就是擊沉。</p></div>
+<div class="rule"><b>敵方海域標記</b>
+<div class="lg"><div><i class="sw" data-i="1"></i>落空，或確定無船</div>
+<div><i class="sw" data-i="2"></i>命中：這格有船。周圍不一定無船，只記這一格</div>
+<div><i class="sw red" data-i="3"></i>擊沉：整艘船都命中。船不會相鄰，所以外圍一圈自動標為落空（可手動修改）</div></div></div>
+<div class="rule"><b>我方海域標記</b>
+<div class="lg"><div><i class="sw" data-i="miss"></i>對方炮擊落空</div><div><i class="sw" data-i="x"></i>我方船艦被命中</div></div></div>
+<div class="rule"><b>鎖定標記</b><p>敵方海域的手動標記和擊沉後周圍自動產生的落空標記，均會在 5 秒後上鎖。長按已鎖定的格子可暫時解鎖並修改；全部上鎖／解鎖同樣適用於自動標記。</p></div>
+<div class="rule"><b>紀錄</b><p>同一格無論切換幾次落空、命中或擊沉，都只算一步；切回空白便不計入步數。擊沉後自動標記的周圍格子不另計步。擺好並鎖定我方船艦、雙方標記清空後，視為新的一局；清空前的一局會保留在紀錄中。</p></div>
+<div class="rule"><b>介面導覽</b><p><a href="#" id="replayTour">重新播放介面導覽</a>，一步一步複習每個區塊的用法。</p></div>
+  </div></aside>
+</header>
+
+<section class="panel" id="ownPanel">
+  <div class="head"><h2>我的海域</h2></div>
+  <div id="own" class="board"></div>
+  <div class="tools">
+    <div class="picker" id="picker"></div>
+    <button class="ib" id="lockShip" data-tip="鎖定船艦" aria-label="鎖定船艦"></button>
+    <button class="ib" id="rotBtn" data-tip="旋轉" aria-label="旋轉"></button>
+    <button class="ib" id="clrOwn" data-tip="清空" aria-label="清空"></button>
+  </div>
+</section>
+
+<section class="panel" id="enPanel">
+  <div class="head"><h2>敵方海域</h2></div>
+  <div id="enemy" class="board"></div>
+  <div class="tools">
+    <button class="ib" id="unlockAll" data-tip="全部解鎖" aria-label="全部解鎖"></button>
+    <button class="ib" style="display:none" id="lockAll" data-tip="全部上鎖" aria-label="全部上鎖"></button>
+    <button class="ib" id="clrEn" data-tip="清空" aria-label="清空"></button>
+  </div>
+</section>
+<section class="panel" id="stats">
+  <div class="head"><h2>紀錄</h2><div style="display:flex;gap:2px"><button class="ib" id="statToggle" aria-label="收合/展開"></button><button class="ib" id="clrStat" aria-label="清空紀錄"></button></div></div>
+  <div class="sg"></div>
+</section>
+</main>
+<div id="modal"><div class="mb"><p id="mt"></p><div class="mr"><button class="ib" id="mn" aria-label="取消"></button><button class="ib" id="my" aria-label="確認"></button></div></div></div>
+<div id="ghost"></div>
+<div id="tour"><div id="tourSpot"></div><div id="tourCard"><b id="tourT"></b><p id="tourD"></p><div class="tBtns"><span id="tourN"></span><button id="tourPrev">上一步</button><button id="tourSkip">跳過</button><button id="tourNext" class="pri">下一步</button></div></div></div>
+
+<script>
+(()=>{
+"use strict";
+const N=5,KEY="battleship_v3",OLD="simpleBattleCompact_v2",LEN={"3":3,"2a":2,"2b":2,"1":1},IDS=Object.keys(LEN);
+const $=s=>document.querySelector(s);
+const I=p=>`<svg viewBox="0 0 24 24">${p}</svg>`;
+const ICON={
+ rot:I('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+ undo:I('<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'),
+ redo:I('<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>'),
+ lock:I('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+ unlock:I('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>'),
+ trash:I('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
+ help:I('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>'),
+ min:I('<path d="M6 15l6-6 6 6"/>'),
+ close:I('<path d="M6 6l12 12M18 6L6 18"/>'),
+  check:I('<path d="M5 12l5 5L20 7"/>')
+};
+const CELL={
+ 1:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#64748b"/></svg>',
+ 2:'<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3" fill="none" stroke="#2563eb" stroke-width="2.4"/></svg>',
+ x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/></svg>',
+ 3:'<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 6l-2 5.8L22 14l-5.8.6L15 21l-3-4.2L9 21l-1.2-6.4L2 14l4-2.2L4 6l5.6 1.6z" fill="#fff"/></svg>',
+ miss:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="#94a3b8" stroke-width="2.2"/></svg>'
+};
+let S={fleet:{},shots:{},enemy:{}},g={on:false,n:0,steps:0,hist:[],pend:null},sl=false,locked=new Set(),sel="3",tut="open",undo=[],redo=[],timers={},press=null,D=null,suppress=false,tourSeen=false,statClosed=true;
+const K=(r,c)=>r+","+c,P=k=>k.split(",").map(Number),inb=(r,c)=>r>=0&&r<N&&c>=0&&c<N;
+const cellsOf=(p,len)=>Array.from({length:len},(_,i)=>[p.r+(p.d==="V"?i:0),p.c+(p.d==="H"?i:0)]);
+function valid(id,p){
+  const cs=cellsOf(p,LEN[id]);
+  if(!cs.every(([r,c])=>inb(r,c)))return false;
+  for(const o in S.fleet){if(o===id)continue;
+    for(const [a,b] of cellsOf(S.fleet[o],LEN[o]))for(const [r,c] of cs)if(Math.max(Math.abs(a-r),Math.abs(b-c))<=1)return false;}
+  return true;
+}
+const N8=[-1,0,1].flatMap(a=>[-1,0,1].map(b=>[a,b])).filter(([a,b])=>a||b);
+function autoSet(){
+  const s=new Set();
+  for(const k in S.enemy)if(S.enemy[k]===3){const [r,c]=P(k);
+    for(const [a,b] of N8){const n=K(r+a,c+b);if(inb(r+a,c+b)&&S.enemy[n]===undefined)s.add(n)}}
+  return s;
+}
+const ds=(k,A)=>k in S.enemy?S.enemy[k]:(A.has(k)?1:0);
+function group(k,vals){
+  const seen=new Set([k]),q=[k];
+  while(q.length){const [r,c]=P(q.pop());
+    for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){const n=K(r+a,c+b);
+      if(!seen.has(n)&&inb(r+a,c+b)&&vals.includes(S.enemy[n])){seen.add(n);q.push(n)}}}
+  return [...seen];
+}
+/* ---------- storage / history ---------- */
+function save(){try{localStorage.setItem(KEY,JSON.stringify({v:4,...S,locked:[...locked],sel,tut,g,sl,seen:tourSeen,statClosed}))}catch(e){}}
+function load(){
+  try{
+    const d=JSON.parse(localStorage.getItem(KEY)||"null");
+    if(d){S={fleet:d.fleet||{},shots:d.shots||{},enemy:d.enemy||{}};locked=new Set(d.locked||[]);sel=d.sel||"3";tut=d.tut==="min"?"open":(d.tut||"open");tourSeen=!!d.seen;statClosed=!!d.statClosed;
+      if(d.g)g={hist:[],pend:null,...d.g};sl=!!d.sl;
+      if(d.v===3)for(const k in S.enemy){if(S.enemy[k]===3)S.enemy[k]=2;else if(S.enemy[k]===4)S.enemy[k]=3}
+      return}
+    const o=JSON.parse(localStorage.getItem(OLD)||"null");
+    if(!o)return;
+    const cv=k=>K(Number(k.slice(1))-1,"abcde".indexOf(k[0]));
+    const by={};for(const k in o.ships||{})(by[o.ships[k]]=by[o.ships[k]]||[]).push(P(cv(k)));
+    for(const id in by){const a=by[id].sort((x,y)=>x[0]-y[0]||x[1]-y[1]);
+      S.fleet[id]={r:a[0][0],c:a[0][1],d:a.length>1&&a[0][0]===a[1][0]?"H":"V"}}
+    (o.ownHits||[]).forEach(k=>S.shots[cv(k)]=1);
+    for(const k in o.enemy||{})if(o.enemy[k])S.enemy[cv(k)]=o.enemy[k];
+  }catch(e){}
+}
+const snap=()=>JSON.stringify({...S,locked:[...locked],g});
+// 只有手動確認的非空白座標計為一步；切換標記種類不增加步數。
+function countStep(before,after){
+  if(!before&&after)g.steps++;
+  else if(before&&!after)g.steps=Math.max(0,g.steps-1);
+}
+function push(){undo.push(snap());if(undo.length>100)undo.shift();redo=[];hist()}
+function restore(s){
+  const d=JSON.parse(s);S={fleet:d.fleet,shots:d.shots,enemy:d.enemy};locked=new Set(d.locked);
+  if(d.g)g=d.g;
+  Object.values(timers).forEach(clearTimeout);timers={};syncEnemyLocks();all();
+}
+function hist(){$("#undoBtn").disabled=!undo.length;$("#redoBtn").disabled=!redo.length}
+$("#undoBtn").onclick=()=>{if(undo.length){redo.push(snap());restore(undo.pop());hist()}};
+$("#redoBtn").onclick=()=>{if(redo.length){undo.push(snap());restore(redo.pop());hist()}};
+/* ---------- own board ---------- */
+const own=$("#own"),en=$("#enemy"),ownEls={},enEls={};
+function frame(b,els,mk){
+  b.append(document.createElement("div"));
+  [..."abcde"].forEach(c=>{const e=document.createElement("div");e.className="co";e.textContent=c.toUpperCase();b.append(e)});
+  for(let r=0;r<N;r++){
+    const l=document.createElement("div");l.className="co";l.textContent=r+1;b.append(l);
+    for(let c=0;c<N;c++){const btn=document.createElement("button");btn.type="button";btn.className="cell";
+      btn.dataset.r=r;btn.dataset.c=c;els[K(r,c)]=btn;mk(btn,r,c);b.append(btn)}
+  }
+}
+const shipAt=()=>{const m={};for(const id in S.fleet)cellsOf(S.fleet[id],LEN[id]).forEach(([r,c],i)=>m[K(r,c)]={id,i});return m};
+function updOwn(){
+  const m=shipAt();
+  for(const k in ownEls){
+    const el=ownEls[k],[r,c]=P(k),s=m[k],same=(a,b)=>m[K(a,b)]&&s&&m[K(a,b)].id===s.id;
+    el.classList.toggle("ship",!!s);el.classList.toggle("sel",!!s&&s.id===sel&&!sl);
+    el.classList.toggle("dim",!!(D&&D.from==="board"&&s&&s.id===D.id));
+    const R=(a,b)=>!same(r+a,c)&&!same(r,c+b)?"11px":"4px";
+    el.style.borderRadius=s?`${R(-1,-1)} ${R(-1,1)} ${R(1,1)} ${R(1,-1)}`:"";
+    const h=S.shots[k]?(s?CELL.x:CELL.miss):"";
+    if(el._h!==h){el.innerHTML=h;el._h=h}
+  }
+  document.querySelectorAll(".po").forEach(p=>{p.classList.toggle("sel",p.dataset.id===sel);p.classList.toggle("placed",!!S.fleet[p.dataset.id])});
+  $("#rotBtn").disabled=sl||!(S.fleet[sel]&&LEN[sel]>1);
+  const lb=$("#lockShip");lb.innerHTML=sl?ICON.lock:ICON.unlock;lb.classList.toggle("on",sl);
+  own.classList.toggle("sl",sl);$("#picker").classList.toggle("off",sl);updStats();
+}
+const shipSvg=(len,h=28)=>`<svg width="${len*h}" height="${h}" viewBox="0 0 ${len*28} 28"><rect x="1" y="1" width="${len*28-2}" height="26" rx="10" fill="#93c5fd" stroke="#3b82f6" stroke-width="2"/>${Array.from({length:len-1},(_,i)=>`<path d="M${28*(i+1)} 6v16" stroke="#3b82f6" stroke-opacity=".4"/>`).join("")}</svg>`;
+$("#picker").innerHTML=IDS.map(id=>`<div class="po" data-id="${id}">${shipSvg(LEN[id],16)}</div>`).join("");
+frame(own,ownEls,(b,r,c)=>{
+  b.addEventListener("pointerdown",e=>{
+    const s=shipAt()[K(r,c)];press={k:K(r,c),x:e.clientX,y:e.clientY,id:!sl&&s?s.id:undefined,grab:s?s.i:0,from:"board"};
+    if(s&&!sl){sel=s.id;updOwn()}
+  });
+});
+document.querySelectorAll(".po").forEach(p=>p.addEventListener("pointerdown",e=>{
+  if(sl)return;e.preventDefault();sel=p.dataset.id;press={x:e.clientX,y:e.clientY,id:sel,grab:LEN[sel]>>1,from:"picker"};updOwn();
+}));
+/* drag */
+const ghost=$("#ghost");
+function startDrag(e){
+  const id=press.id,p=S.fleet[id];
+  D={id,grab:press.grab,d:p?p.d:"H",d0:p?p.d:"H",from:press.from,t:null,pv:[]};
+  const cs=own.querySelector(".cell").offsetWidth,len=LEN[id];
+  ghost.style.cssText=`display:flex;flex-direction:${D.d==="V"?"column":"row"}`;
+  ghost.innerHTML=Array.from({length:len},()=>`<i style="width:${cs}px;height:${cs}px"></i>`).join("");
+  D.cs=cs;document.body.classList.add("dragging");moveDrag(e);updOwn();
+}
+function moveDrag(e){
+  const {cs,grab,id}=D,len=LEN[id];
+  D.pv.forEach(k=>ownEls[k].classList.remove("pv","bad"));D.pv=[];D.t=null;
+  const el=document.elementFromPoint(e.clientX,e.clientY),cell=el&&el.closest&&el.closest("#own .cell");
+  if(cell){
+    const r=+cell.dataset.r,c=+cell.dataset.c,o=D.d0,ds2=len>1?[o,o==="H"?"V":"H"]:[o];
+    let best=null,bd=99;
+    const tryP=(p,q)=>{if(q<bd&&valid(id,p)){best=p;bd=q}};
+    ds2.forEach((d,oi)=>{
+      for(let gi=0;gi<len;gi++)tryP({r:d==="V"?r-gi:r,c:d==="H"?c-gi:c,d},(gi===grab?0:2+Math.abs(gi-grab))+oi*1.2);
+      const rw={r:d==="V"?r-grab:r,c:d==="H"?c-grab:c};
+      for(const [a,b] of N8)tryP({r:rw.r+a,c:rw.c+b,d},10+a*a+b*b+oi*1.2);
+    });
+    D.t=best;
+    const sh=best||{r:o==="V"?r-grab:r,c:o==="H"?c-grab:c,d:o};
+    if(best&&best.d!==D.d){D.d=best.d;ghost.style.flexDirection=D.d==="V"?"column":"row"}
+    const cl=cellsOf(sh,len).filter(([a,b])=>inb(a,b)).map(([a,b])=>K(a,b));
+    cl.forEach(k=>ownEls[k].classList.add(best?"pv":"bad"));D.pv=cl;
+  }
+  const d=D.d;
+  ghost.style.left=(e.clientX-(d==="H"?(grab+.5)*cs+grab*4:cs/2))+"px";
+  ghost.style.top=(e.clientY-(d==="V"?(grab+.5)*cs+grab*4:cs/2))+"px";
+}
+function endDrag(ok){
+  if(!D)return;
+  D.pv.forEach(k=>ownEls[k].classList.remove("pv","bad"));
+  if(ok&&D.t){const o=S.fleet[D.id];
+    if(!o||o.r!==D.t.r||o.c!==D.t.c||o.d!==D.t.d){push();S.fleet[D.id]=D.t}sel=D.id;save()}
+  ghost.style.display="none";document.body.classList.remove("dragging");D=null;updOwn();
+}
+window.addEventListener("pointermove",e=>{
+  if(D){e.preventDefault();moveDrag(e);return}
+  if(press&&press.id&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>8)startDrag(e);
+},{passive:false});
+window.addEventListener("pointerup",e=>{
+  if(D){endDrag(true);press=null;return}
+  if(press&&press.from==="board"){
+    push();const k=press.k,before=!!S.shots[k];
+    if(before)delete S.shots[k];else S.shots[k]=1;
+    countStep(before,!!S.shots[k]);save();updOwn();
+  }
+  press=null;
+});
+window.addEventListener("pointercancel",()=>{endDrag(false);press=null});
+/* rotate */
+function rotate(){
+  if(sl)return;
+  const p=S.fleet[sel],len=LEN[sel];if(!p||len<2)return;
+  const toV=p.d==="H";let c;
+  if(len===3)c=[toV?{r:p.r-1,c:p.c+1,d:"V"}:{r:p.r+1,c:p.c-1,d:"H"}];
+  else c=toV?[{r:p.r,c:p.c+1},{r:p.r,c:p.c},{r:p.r-1,c:p.c+1},{r:p.r-1,c:p.c}].map(x=>({...x,d:"V"}))
+            :[{r:p.r,c:p.c-1},{r:p.r,c:p.c},{r:p.r+1,c:p.c-1},{r:p.r+1,c:p.c}].map(x=>({...x,d:"H"}));
+  const ok=c.find(x=>valid(sel,x));
+  if(!ok){cellsOf(p,len).forEach(([r,cc])=>{const e=ownEls[K(r,cc)];e.classList.remove("shake");void e.offsetWidth;e.classList.add("shake")});return}
+  push();S.fleet[sel]=ok;save();updOwn();
+}
+$("#rotBtn").onclick=rotate;
+/* ---------- enemy board ---------- */
+let lp=null;
+// 有值的格子包含手動標記與擊沉後衍生的九宮格落空標記。
+const markedCells=()=>{
+  const active=autoSet();
+  for(const k in S.enemy){if(S.enemy[k])active.add(k);else active.delete(k)}
+  return active;
+};
+function startTimer(k){
+  clearTimeout(timers[k]);
+  timers[k]=setTimeout(()=>{
+    delete timers[k];
+    if(markedCells().has(k)){locked.add(k);updEn();save()}
+  },5000);
+}
+// 同步新增／消失的自動落空格，避免標記消失後仍留下鎖或計時器。
+function syncEnemyLocks(restart=false){
+  const active=markedCells();
+  for(const k of [...locked])if(!active.has(k))locked.delete(k);
+  for(const k of Object.keys(timers))if(!active.has(k)||restart){clearTimeout(timers[k]);delete timers[k]}
+  for(const k of active)if(!locked.has(k)&&!timers[k])startTimer(k);
+}
+function unlockCell(k){
+  locked.delete(k);startTimer(k);updEn();save();
+}
+frame(en,enEls,(b,r,c)=>{
+  const k=K(r,c);
+  b.addEventListener("pointerdown",()=>{
+    if(!locked.has(k))return;
+    lp=setTimeout(()=>{suppress=true;unlockCell(k)},450);
+  });
+  ["pointerup","pointerleave","pointercancel"].forEach(t=>b.addEventListener(t,()=>clearTimeout(lp)));
+  b.addEventListener("click",()=>{
+    if(suppress){suppress=false;return}
+    if(locked.has(k)){b.classList.remove("shake");void b.offsetWidth;b.classList.add("shake");return}
+    push();
+    const before=S.enemy[k]||0,cur=ds(k,autoSet()),nx=(cur+1)%4;
+    if(cur===3)group(k,[3]).filter(x=>x!==k).forEach(x=>S.enemy[x]=2);
+    S.enemy[k]=nx;
+    if(nx===3)group(k,[2,3]).forEach(x=>S.enemy[x]=3);
+    const A=autoSet();
+    for(const x in S.enemy)if(S.enemy[x]===0&&!A.has(x))delete S.enemy[x];
+    countStep(before,S.enemy[k]||0);
+    syncEnemyLocks();
+    if(S.enemy[k])startTimer(k); // 只要修改該格，重算五秒鎖定時間
+    updEn();save();
+  });
+});
+function updEn(){
+  const A=autoSet();
+  for(const k in enEls){
+    const el=enEls[k],v=ds(k,A);
+    if(demoTimer&&el===demoCell())continue;
+    el.dataset.v=v;el.classList.toggle("locked",locked.has(k)&&v!==0);
+    const h=CELL[v]||"";if(el._h!==h){el.innerHTML=h;el._h=h}
+  }
+  updStats();
+}
+const lockAllCells=()=>{for(const k of markedCells())locked.add(k)};
+$("#unlockAll").onclick=()=>{locked.clear();syncEnemyLocks(true);updEn();save()};
+$("#lockAll").onclick=()=>{
+  Object.values(timers).forEach(clearTimeout);timers={};
+  lockAllCells();updEn();save();
+};
+const emptyMarks=()=>!Object.values(S.enemy).some(v=>v)&&!Object.keys(S.shots).length;
+function keep(){
+  const m=shipAt(),es=Object.values(S.enemy).filter(v=>v>=1),os=Object.keys(S.shots),p=g.pend||{es:0,eh:0,os:0,oh:0};
+  g.pend={es:Math.max(p.es,es.length),eh:Math.max(p.eh,es.filter(v=>v>=2).length),os:Math.max(p.os,os.length),oh:Math.max(p.oh,os.filter(k=>m[k]).length)};
+}
+function afterClear(){
+  if(emptyMarks()){
+    if(g.pend&&(g.pend.es||g.pend.os)){if(!g.on)g.n++;g.hist.push({n:g.n,steps:g.steps,...g.pend});g.steps=0}
+    g.pend=null;g.on=false;
+  }
+updOwn();updEn();save();hist()}
+function ask(msg){return new Promise(res=>{
+  const m=$("#modal");$("#mt").textContent=msg;m.classList.add("show");
+  const done=v=>{m.classList.remove("show");res(v)};
+  $("#my").onclick=()=>done(true);$("#mn").onclick=()=>done(false);m.onclick=e=>{if(e.target===m)done(false)};
+})}
+$("#clrOwn").onclick=async()=>{
+  if(Object.keys(S.shots).length){if(!await ask("清除炮擊標記？"))return;push();keep();S.shots={}}
+  else if(Object.keys(S.fleet).length){if(!await ask("清空船艦？"))return;push();S.fleet={};sl=false}
+  else return;
+  afterClear();
+};
+$("#clrEn").onclick=async()=>{
+  if(!await ask("清空敵方標記？"))return;
+  push();keep();Object.values(timers).forEach(clearTimeout);timers={};S.enemy={};locked.clear();afterClear();
+};
+$("#clrStat").onclick=async()=>{
+  if(!await ask("清空紀錄？"))return;
+  g.hist=[];g.pend=null;g.steps=0;g.n=g.on?1:0;updStats();save();
+};
+function statApply(){$("#stats").classList.toggle("closed",statClosed)}
+function statToggle(){statClosed=!statClosed;statApply();save()}
+$("#stats").addEventListener("click",e=>{
+  if(e.target.closest("#clrStat"))return;
+  statToggle();
+});
+$("#lockShip").onclick=()=>{sl=!sl;updOwn();save()};
+function evalGame(){
+  if(!emptyMarks())return;
+  if(!(IDS.every(i=>S.fleet[i])&&sl))g.on=false;
+  else if(!g.on){g.on=true;g.n++;g.steps=0}
+}
+function updStats(){
+  evalGame();
+  const m=shipAt(),es=Object.values(S.enemy).filter(v=>v>=1),eh=es.filter(v=>v>=2).length,
+    os=Object.keys(S.shots),oh=os.filter(k=>m[k]).length,rt=(h,n)=>n?Math.round(h/n*100)+"%":"–";
+  $("#stats .sg").innerHTML=`<div class="gh"><span>第 ${g.on?g.n:g.n+1} 局</span><span>步數 ${g.steps}</span></div><div class="gr"><span></span><u>出擊</u><u>命中</u><u>命中率</u><span>我</span><b>${es.length}</b><b>${eh}</b><b>${rt(eh,es.length)}</b><span>敵</span><b>${os.length}</b><b>${oh}</b><b>${rt(oh,os.length)}</b></div>`+(g.hist.length?`<div class="hs"><div class="hr"><u>局</u><u>步</u><u>我方</u><u>敵方</u></div>${g.hist.slice().reverse().map(h=>`<div class="hr"><b>${h.n}</b><span>${h.steps}</span><span>${h.eh}/${h.es} ${rt(h.eh,h.es)}</span><span>${h.oh}/${h.os} ${rt(h.oh,h.os)}</span></div>`).join("")}</div>`:"");
+}
+function all(){updOwn();updEn();save();hist()}
+/* ---------- rules window ---------- */
+function tutApply(noanim){$("#tut").className=(tut==="closed"?"closed":"")+(noanim?" noanim":"");save()}
+$("#closeBtn").onclick=()=>{tut="closed";tutApply()};
+$("#helpBtn").onclick=()=>{tut=tut==="closed"?"open":"closed";tutApply()};
+document.addEventListener("pointerdown",e=>{if(tut!=="closed"&&e.target.closest&&!e.target.closest("#tut,#helpBtn")){tut="closed";tutApply()}});
+document.querySelectorAll("#tut .sw").forEach(e=>e.innerHTML=CELL[e.dataset.i]);
+/* ---------- guided tour ---------- */
+const TOUR=[
+ {t:"歡迎使用海戰棋",d:"這是兩人面對面對戰的記分工具，資料會自動存在本機，重新整理也不會消失。跟著導覽認識每個區塊，隨時可跳過。"},
+ {el:"#own",t:"我的海域",d:"把船艦拖進格子擺放，橫放直放皆可，不可重疊或相鄰（含斜角）。點格子可記錄對方炮擊結果。"},
+ {el:"#picker",t:"船艦區",d:"共四艘：3格×1、2格×2、1格×1。點選後拖到海域擺放，已擺放的會變淡。"},
+ {el:"#lockShip",t:"鎖定船艦",d:"四艘全部擺好後按這裡鎖定，鎖定後船艦無法移動，開始新的一局。"},
+ {el:"#enemy",t:"敵方海域",d:"點格子循環切換：空白 → 落空 → 命中 → 擊沉。擊沉後周圍一圈會自動標為落空。"},
+ {el:"#enemy",t:"點擊圖示區塊顯示",d:"看示範：點一格會依序顯示落空、命中、擊沉三種圖示，再點一次回到空白。實際操作時直接點敵方海域的格子即可。",demo:true},
+ {el:"#unlockAll",t:"標記上鎖",d:"標記 5 秒後自動上鎖防止誤觸，長按可解鎖。這顆按鈕一次解鎖全部。"},
+ {el:"#stats",t:"紀錄",d:"即時統計本局步數與雙方命中率。平常收合成扁平一條不佔位，需要時點紀錄區塊任意處展開，下方保留過去每一局的戰績。"},
+ {el:"#helpBtn",t:"教學面板",d:"隨時點這裡查看完整規則，裡面也有連結可以重新播放這個導覽。"}
+];
+let ti=0,tourTut=null,tourStat=null,scrollT=null,demoTimer=null,demoStep=0,demoFor=null;
+const DEMO_V=[1,2,3,0];
+const demoCell=()=>enEls[K(2,2)];
+function stopDemo(){
+  clearInterval(demoTimer);demoTimer=null;
+  const c=demoCell();if(!c)return;
+  c.classList.remove("demo");
+  const v=ds(K(2,2),autoSet()),h=CELL[v]||"";
+  c.dataset.v=v;c.innerHTML=h;c._h=h;
+}
+function startDemo(){
+  stopDemo();demoStep=0;
+  const c=demoCell();if(!c)return;
+  c.classList.add("demo");
+  const paint=()=>{const v=DEMO_V[demoStep%DEMO_V.length];c.dataset.v=v;c.innerHTML=CELL[v]||"";c._h=CELL[v]||"";demoStep++};
+  paint();demoTimer=setInterval(paint,900);
+}
+const tourEl=$("#tour"),spot=$("#tourSpot"),card=$("#tourCard");
+function tourPos(){
+  const st=TOUR[ti],tg=st.el?$(st.el):null;
+  $("#tourT").textContent=st.t;$("#tourD").textContent=st.d;
+  $("#tourN").textContent=(ti+1)+" / "+TOUR.length;
+  $("#tourPrev").style.visibility=ti?"visible":"hidden";
+  $("#tourNext").textContent=ti===TOUR.length-1?"完成":"下一步";
+  if(st.demo){if(demoFor!==ti){demoFor=ti;startDemo()}}else{demoFor=null;stopDemo()}
+  const cw=card.offsetWidth||280,ch=card.offsetHeight||170;
+  let x,y;
+  if(!tg){spot.style.opacity=0;x=innerWidth/2-cw/2;y=innerHeight/2-ch/2}
+  else{
+    let r=tg.getBoundingClientRect();
+    if(r.height<innerHeight-24&&(r.top<0||r.bottom>innerHeight)){
+      spot.style.opacity=0;
+      tg.scrollIntoView({block:"center",behavior:"smooth"});
+      clearTimeout(scrollT);
+      scrollT=setTimeout(tourPos,420);
+      return;
+    }
+    const p=6;
+    spot.style.opacity=1;
+    spot.style.left=r.left-p+"px";spot.style.top=r.top-p+"px";
+    spot.style.width=r.width+p*2+"px";spot.style.height=r.height+p*2+"px";
+    x=Math.max(12,Math.min(innerWidth-cw-12,r.left+r.width/2-cw/2));
+    y=r.bottom+p+12;
+    if(y+ch>innerHeight-12)y=Math.max(12,r.top-p-12-ch);
+  }
+  card.style.left=x+"px";card.style.top=y+"px";
+}
+function startTour(){ti=0;tourTut=tut;tut="closed";tutApply();tourStat=statClosed;statClosed=false;statApply();tourEl.classList.add("show");tourPos()}
+function endTour(){clearTimeout(scrollT);demoFor=null;stopDemo();tourEl.classList.remove("show");if(tourStat!==null){statClosed=tourStat;tourStat=null;statApply()}if(tourTut!==null){tut=tourTut;tourTut=null;tutApply()}tourSeen=true;save()}
+$("#tourNext").onclick=()=>{ti<TOUR.length-1?(ti++,tourPos()):endTour()};
+$("#tourPrev").onclick=()=>{if(ti){ti--;tourPos()}};
+$("#tourSkip").onclick=endTour;
+$("#replayTour").onclick=e=>{e.preventDefault();startTour()};
+addEventListener("resize",()=>{if(tourEl.classList.contains("show"))tourPos()});
+/* ---------- init ---------- */
+$("#rotBtn").innerHTML=ICON.rot;$("#undoBtn").innerHTML=ICON.undo;$("#redoBtn").innerHTML=ICON.redo;
+$("#helpBtn").innerHTML=ICON.help;$("#closeBtn").innerHTML=ICON.close;
+$("#unlockAll").innerHTML=ICON.unlock;$("#lockAll").innerHTML=ICON.lock;
+$("#clrOwn").innerHTML=ICON.trash;$("#clrStat").innerHTML=ICON.trash;$("#mn").innerHTML=ICON.close;$("#my").innerHTML=ICON.check;$("#clrEn").innerHTML=ICON.trash;$("#statToggle").innerHTML=ICON.min;
+load();lockAllCells();
+if(!LEN[sel])sel="3";
+if(!tourSeen)statClosed=false;
+tutApply(true);statApply();all();
+if(!tourSeen)setTimeout(startTour,400);
+})();
+</script>
+</body>
+</html>
