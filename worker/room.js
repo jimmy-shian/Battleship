@@ -320,6 +320,26 @@ export class Room {
         ws.close(1013, "room full");
         return;
       }
+
+      // 新玩家接手或加入時，若上一局已結束：自動重置回佈陣階段（舊結果已自動存檔），
+      // 避免殘留的結算視窗蓋住畫面、導致無法佈陣
+      if (s.phase === "over") {
+        s.fired = {};
+        s.marks = {};
+        s.shots = [];
+        s.startedAt = 0;
+        s.archivedId = "";
+        s.over = null;
+        s.phase = "setup";
+        s.turn = null;
+        for (const x of s.players) {
+          x.fleet = {};
+          x.ready = false;
+          s.fired[x.id] = {};
+          s.marks[x.id] = {};
+        }
+        this.broadcast({ t: S2C.REMATCH, keepFleet: false });
+      }
     }
 
     att.playerId = player.id;
