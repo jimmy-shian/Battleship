@@ -3,6 +3,7 @@
  * 負責：伺服器設定、固定房間選擇（Room1／Room2／Room3）、房間狀態預覽、進入房間。
  */
 import { BattleComm, normalizeRoomKey } from "./comm.mjs";
+import { boardConfig } from "./rules.js";
 import { enhanceSelect } from "./select.js";
 
 const $ = (s) => document.querySelector(s);
@@ -10,7 +11,7 @@ const LS = {
   key: "bs.room.key",
   name: "bs.room.name",
   server: "bs.server.url",
-  rule: "bs.room.rule"
+  mode: "bs.room.mode"
 };
 
 const ICON = {
@@ -58,8 +59,8 @@ $("#closeHelp").innerHTML = ICON.close;
 $("#advToggle").innerHTML = ICON.min;
 
 $("#serverInput").value = serverBase();
-$("#ruleInput").value = readLS(LS.rule, "alt");
-enhanceSelect($("#ruleInput"), { block: true });
+$("#modeInput").value = boardConfig(readLS(LS.mode, "s5")).id;
+enhanceSelect($("#modeInput"), { block: true });
 const keyCtl = enhanceSelect($("#keySel"), { block: true });
 $("#nameInput").value = params.get("name") || readLS(LS.name, "") || "";
 
@@ -186,10 +187,11 @@ function renderRoom(data) {
     box.appendChild(row);
   });
   const phaseText = { setup: "佈陣階段", battle: "戰鬥中", over: "本局結束" }[data.phase] || data.phase;
+  const modeText = boardConfig(data.boardMode).label;
   const info = document.createElement("p");
   info.className = "hint";
   info.style.margin = "8px 0 0";
-  info.textContent = "房間狀態：" + phaseText + "（" + data.players.length + "/2 人）";
+  info.textContent = "房間狀態：" + phaseText + "（" + data.players.length + "/2 人）｜海域：" + modeText;
   box.appendChild(info);
 }
 
@@ -206,7 +208,7 @@ $("#enterBtn").onclick = async () => {
 
   writeLS(LS.key, key);
   writeLS(LS.name, name);
-  writeLS(LS.rule, $("#ruleInput").value);
+  writeLS(LS.mode, $("#modeInput").value);
   writeLS(LS.server, $("#serverInput").value.trim());
 
   goRoom(key, name);
@@ -216,7 +218,7 @@ function goRoom(key, name) {
   // 網址不帶暱稱（避免個人資訊外流），暱稱只存在自己的瀏覽器
   const q = new URLSearchParams({ key });
   if ($("#serverInput").value.trim()) q.set("server", $("#serverInput").value.trim());
-  q.set("rule", $("#ruleInput").value);
+  q.set("mode", $("#modeInput").value);
   location.href = "board.html?" + q.toString();
 }
 

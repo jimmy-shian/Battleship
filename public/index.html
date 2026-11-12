@@ -33,10 +33,10 @@
     </label>
 
     <div class="field">
-      <span>回合規則</span>
-      <select id="ruleInput">
-        <option value="alt">輪流交替 — 每次開火後換人</option>
-        <option value="keep">命中續打 — 命中或擊沉則繼續，未中才換人</option>
+      <span>海域模式</span>
+      <select id="modeInput">
+        <option value="s5">簡易 5×5 — 4 艘船（自家簡易版）</option>
+        <option value="c10">正版 10×10 — 5 艘船（官方規則）</option>
       </select>
     </div>
 
@@ -50,7 +50,7 @@
     </div>
 
     <p class="hint" id="statusLine" style="margin:12px 0 0">正在確認伺服器…</p>
-    <p class="hint" style="margin:8px 0 0">固定三間房：Room1／Room2／Room3，每間同時一場對戰（2 人），第三位進入會顯示「房間已滿」。戰績每間最多保留 <b>100 筆</b>，滿了由後端自動刪除最舊的紀錄；紀錄會顯示玩家名稱。</p>
+    <p class="hint" style="margin:8px 0 0">固定三間房：Room1／Room2／Room3，每間同時一場對戰（2 人），第三位進入會顯示「房間已滿」。回合規則固定為<b>命中續打</b>（命中或擊沉可繼續開火）。玩家離開頁面後座位會自動釋出，新玩家進入時殘留的對局會自動重算。戰績每間最多保留 <b>100 筆</b>，滿了由後端自動刪除最舊的紀錄；紀錄會顯示玩家名稱。</p>
   </section>
 
   <section class="panel" id="roomPanel" hidden>
@@ -63,7 +63,7 @@
     <ul class="steps">
       <li><b>1.</b> 從「房間」下拉選 Room1／Room2／Room3 其中一間，兩人選同一間就會對戰。</li>
       <li><b>2.</b> 各自在「我的海域」擺好 4 艘船並鎖定。</li>
-      <li><b>3.</b> 輪流在「敵方海域」點擊開火，點下去就會自動標記結果，由伺服器判定。</li>
+      <li><b>3.</b> 在「敵方海域」點擊開火，點下去就會自動標記結果，由伺服器判定；命中或擊沉可繼續開火（命中續打）。</li>
       <li><b>4.</b> 擊沉的船會<b>自動標註</b>周圍落空，全數擊沉即結算。</li>
     </ul>
     <div class="tools">
@@ -90,8 +90,8 @@
     <div class="bar"><b>遊戲規則</b><button class="ib" id="closeHelp" aria-label="關閉"></button></div>
     <div class="body">
       <div class="rule"><b>目標</b><p>雙方輪流猜對方船艦的位置，最先擊沉對方所有船艦的人獲勝。</p></div>
-      <div class="rule"><b>船艦</b><p>5×5 海域，每人 4 艘：3 格 ×1、2 格 ×2、1 格 ×1，共 8 格。橫放或直放，不可重疊，也不可相鄰（含斜角）。</p></div>
-      <div class="rule"><b>回合</b><p>由系統分配回合，點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
+      <div class="rule"><b>船艦</b><p>簡易 5×5：4 艘（3、2、2、1 格），不可重疊或相鄰（含斜角）。正版 10×10：5 艘（5、4、3、3、2 格），照官方規則只禁重疊、允許緊鄰。橫放或直放，不可超出海域。</p></div>
+      <div class="rule"><b>回合</b><p>規則固定為「命中續打」：命中或擊沉可繼續開火，落空才換人。點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
       <div class="rule"><b>敵方海域圖示</b>
         <div class="lg">
           <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>落空：這一格沒有船</div>
@@ -106,8 +106,7 @@
           <div><i class="sw"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#d2707b" stroke-width="2.6" stroke-linecap="round"/></svg></i>我方船艦被命中的那一格</div>
         </div>
       </div>
-      <div class="rule"><b>自動標註</b><p>擊沉一艘船後，其周圍一圈會自動標為落空，省去手動記憶。</p></div>
-      <div class="rule"><b>手動標註</b><p>開啟「標註模式」後可自行在敵方海域記錄推測的落空 / 命中 / 擊沉，不影響系統判定結果。</p></div>
+      <div class="rule"><b>自動標註</b><p>簡易 5×5：擊沉一艘船後，其周圍一圈會自動標為落空（因為船不可相鄰），省去手動記憶。正版 10×10：允許緊鄰，周圍可能有其他船，故不自動標註。</p></div>
       <div class="rule"><b>結算</b><p>擊沉對方全部船艦即結束本局，顯示雙方出擊數、命中數與命中率，並可一鍵再戰。</p></div>
     </div>
   </aside>

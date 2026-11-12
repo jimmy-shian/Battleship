@@ -26,7 +26,7 @@
 (function (global) {
   "use strict";
 
-  const VERSION = 1;
+  const VERSION = 2;
 
   /* Client → Server */
   const C2S = {
@@ -63,7 +63,8 @@
     name: "",                  // 暱稱
     clientId: null,            // 穩定識別碼（重連後靠它認回座位）
     userId: null,              // 使用者層級識別碼（房間數上限用，選填）
-    turnRule: null,            // 進房時希望採用的回合規則（alt / keep）
+    boardMode: null,           // 進房時希望採用的海域模式（s5 / c10，選填）
+    turnRule: null,            // （已停用）回合規則固定為命中續打
     autoReconnect: true,
     reconnectBaseDelay: 1000,
     reconnectMaxDelay: 15000,
@@ -169,6 +170,7 @@
       if (o.name !== undefined) this.opt.name = String(o.name || "").slice(0, 24);
       if (o.clientId !== undefined) this.opt.clientId = o.clientId;
       if (o.userId !== undefined) this.opt.userId = o.userId;
+      if (o.boardMode !== undefined) this.opt.boardMode = o.boardMode;
       if (o.turnRule !== undefined) this.opt.turnRule = o.turnRule;
       return this.connect();
     }
@@ -215,6 +217,7 @@
           name: this.opt.name,
           clientId: this.opt.clientId,
           userId: this.opt.userId || null,
+          boardMode: this.opt.boardMode || null,
           turnRule: this.opt.turnRule || null
         });
         // 補送連線期間暫存的訊息
@@ -331,7 +334,9 @@
     clearMarks() { return this.send(C2S.CLEAR_MARKS); }
     /** 送出通訊訊息 */
     chat(text) { return this.send(C2S.CHAT, { text: String(text || "").slice(0, 300) }); }
-    /** 設定回合規則（僅佈陣階段有效） */
+    /** 設定海域模式（s5 簡易 5×5 / c10 正版 10×10，僅佈陣階段有效） */
+    setBoardMode(mode) { return this.send(C2S.SETTINGS, { boardMode: mode }); }
+    /** （相容保留）回合規則已固定為命中續打，此方法無作用 */
     setTurnRule(rule) { return this.send(C2S.SETTINGS, { turnRule: rule }); }
     /** 請求再戰一局 */
     rematch(keepFleet) { return this.send(C2S.REMATCH, { keepFleet: keepFleet !== false }); }

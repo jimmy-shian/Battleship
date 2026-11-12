@@ -6,11 +6,11 @@
  *  3. 依開火紀錄逐步回放雙方海域
  */
 import {
-  N,
   COLS,
   MARK,
-  SHIP_IDS,
-  SHIP_LEN,
+  boardConfig,
+  shipIdsOf,
+  colsOf,
   cellKey,
   fleetCellMap,
   isShipSunk
@@ -35,7 +35,8 @@ const api = (p) => server + p;
 
 function readLS(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
 
-const ruleName = (r) => (r === "keep" ? "命中續打" : "輪流交替");
+const ruleName = (r) => (r === "keep" ? "命中續打" : r === "alt" ? "輪流交替（舊制）" : "命中續打");
+const modeName = (m) => boardConfig(m).label;
 const fmtTime = (ts) => {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, "0");
@@ -155,7 +156,7 @@ function renderList(matches) {
     }).join("　");
     card.innerHTML =
       `<div class="top"><span class="win">${esc(w)}</span> 勝 <span class="lose">${esc(l)}</span><span class="time">${fmtTime(m.at)}</span></div>` +
-      `<div class="meta"><span>${ruleName(m.turnRule)}</span><span>長度 ${fmtDur(m.durationMs)}</span><span>${pstats}</span></div>`;
+      `<div class="meta"><span>${esc(modeName(m.boardMode))}</span><span>${ruleName(m.turnRule)}</span><span>長度 ${fmtDur(m.durationMs)}</span><span>${pstats}</span></div>`;
     card.onclick = () => openMatch(m.id);
     box.appendChild(card);
   }
@@ -191,7 +192,7 @@ function renderDetail(rec) {
   const kv = document.createElement("div");
   kv.className = "kv";
   kv.innerHTML =
-    `<span>時間：${fmtTime(rec.at)}</span><span>規則：${ruleName(rec.turnRule)}</span>` +
+    `<span>時間：${fmtTime(rec.at)}</span><span>海域：${esc(modeName(rec.boardMode))}</span><span>規則：${ruleName(rec.turnRule)}</span>` +
     `<span>長度：${fmtDur(rec.durationMs)}</span><span>開火 ${(rec.shots || []).length} 次</span>`;
   box.appendChild(kv);
 
@@ -296,19 +297,22 @@ function update() {
   if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
 }
 
-/** 產生某位玩家的海域（含前 step 次的Incoming 炮擊） */
+/** 產生某位玩家的海域（含前 step 次的Incoming 炮擊）；海域大小依該局紀錄的模式 */
 function buildBoard(p, rec, step) {
+  const cfg = boardConfig(rec.boardMode);
   const grid = document.createElement("div");
   grid.className = "hboard";
+  grid.style.gridTemplateColumns = `16px repeat(${cfg.n}, minmax(0, 1fr))`;
+  if (cfg.n > 5) grid.style.width = "340px";
   grid.appendChild(document.createElement("div"));
-  for (const c of COLS) {
+  for (const c of colsOf(cfg)) {
     const e = document.createElement("div");
     e.className = "co";
     e.textContent = c;
     grid.appendChild(e);
   }
 
-  const fleetMap = fleetCellMap(p.fleet || {});
+  const fleetMap = fleetCellMap(p.fleet || {}, cfg);
   const fired = {};
   (rec.shots || []).slice(0, step).forEach((sh) => {
     if (sh.by === p.id) return;
@@ -317,22 +321,22 @@ function buildBoard(p, rec, step) {
   });
 
   const sunk = new Set();
-  for (const id of SHIP_IDS) {
+  for (const id of shipIdsOf(cfg)) {
     if (!p.fleet || !p.fleet[id]) continue;
-    if (!isShipSunk(p.fleet, id, fired)) continue;
+    if (!isShipSunk(p.fleet, id, fired, cfg)) continue;
     const pos = p.fleet[id];
-    const len = SHIP_LEN[id] || 1;
+    const len = cfg.ships[id] || 1;
     for (let i = 0; i < len; i++) {
       sunk.add(cellKey(pos.d === "V" ? pos.r + i : pos.r, pos.d === "H" ? pos.c + i : pos.c));
     }
   }
 
-  for (let r = 0; r < N; r++) {
+  for (let r = 0; r < cfg.n; r++) {
     const lab = document.createElement("div");
     lab.className = "co";
     lab.textContent = r + 1;
     grid.appendChild(lab);
-    for (let c = 0; c < N; c++) {
+    for (let c = 0; c < cfg.n; c++) {
       const k = cellKey(r, c);
       const d = document.createElement("div");
       d.className = "hc";

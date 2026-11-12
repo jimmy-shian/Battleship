@@ -252,11 +252,14 @@ body.dragging { cursor: grabbing; }
 /* ---------- 船艦選擇 ---------- */
 .picker { display: flex; gap: 8px; align-items: center; flex: 1; justify-content: center; }
 .po {
-  padding: 6px; border-radius: 12px; border: 2px solid transparent; background: #64748b14;
-  touch-action: none; cursor: grab; transition: .15s; display: grid;
+  padding: 6px 4px; border-radius: 12px; border: 2px solid transparent; background: #64748b14;
+  touch-action: none; cursor: grab; transition: .15s; display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
 }
 .po svg { display: block; }
+.po .pn { font-size: .6rem; line-height: 1; color: var(--mut); white-space: nowrap; }
 .po.sel { border-color: var(--acc); }
+.po.sel .pn { color: var(--acc); font-weight: 700; }
 .po.placed { opacity: .45; }
 #picker.off { opacity: .3; pointer-events: none; }
 

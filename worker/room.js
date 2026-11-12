@@ -2,20 +2,23 @@
  * 海戰棋 — Durable Object：單一房間
  * -----------------------------------------------------------------------------
  * 每個「房間金鑰」對應一個 Durable Object 實例，負責：
- *   - 座位管理（最多 2 人，支援斷線重連回座）
+ *   - 座位管理（最多 2 人，支援短暫斷線重連回座；逾時未歸自動釋出座位）
  *   - 船隊驗證 / 鎖定
  *   - 回合與開火判定、擊沉自動標註
- *   - 結算（勝負、命中率、下一局）
+ *   - 結算（勝負、命中率、下一局）、重開對局
  *   - 房內通訊訊息轉發
+ *
+ * 座位生命週期：
+ *   - 玩家離開（關閉分頁／斷線）→ 標記離線並保留座位 LEFT_GRACE_MS，供同一分頁重新整理後認回。
+ *   - 超過寬限仍未歸 → 由 sweep 移除座位並重置戰局（房間淨空 → 全新房間）。
+ *   - 寬限期內有新玩家進來 → 直接接管該座位，但「不繼承」船隊與戰局：
+ *     座位重置、進行中的對局整場重算，新玩家從佈陣開始。
  *
  * 使用 WebSocket Hibernation API，空閒時不計費，適合免費方案。
  */
 import { C2S, S2C, ERR, TURN_RULES, PROTOCOL_VERSION } from "../public/js/protocol.js";
 import { buildRecord, saveArchive, listArchive, getArchive, clearArchive } from "./archive.js";
 import {
-  N,
-  SHIP_IDS,
-  SHIP_LEN,
   MARK,
   cellKey,
   parseCell,
@@ -26,7 +29,11 @@ import {
   allShipsSunk,
   autoMissCells,
   buildEnemyBoard,
-  summarize
+  summarize,
+  BOARDS,
+  boardConfig,
+  shipIdsOf,
+  DEFAULT_BOARD
 } from "../public/js/rules.js";
 
 const MAX_PLAYERS = 2;
@@ -50,19 +57,23 @@ export class Room {
       this._loading = (async () => {
         const s = await this.state.storage.get("room");
         if (s) {
-          // 舊版資料相容：已離線但沒有 leftAt 的玩家，以房間最後更新時間回填，讓 sweep 能準時釋出其座位
+          if (!BOARDS[s.boardMode]) s.boardMode = DEFAULT_BOARD;
+          if (s.turnRule !== TURN_RULES.KEEP) s.turnRule = TURN_RULES.KEEP; // 回合規則固定：命中續打
+          // 舊版資料相容：已離線但沒有 leftAt 的玩家（部署前殘留），
+          // 以房間最後更新時間回填，讓 sweep 能準時釋出其座位
           for (const p of s.players || []) {
             if (!p.online && !p.leftAt) p.leftAt = s.updatedAt || Date.now();
           }
           return s;
         }
         const fresh = {
-          v: 1,
+          v: 2,
           key: "",
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          phase: "setup", // setup | battle | over
-          turnRule: TURN_RULES.ALT,
+          phase: "setup",              // setup | battle | over
+          boardMode: DEFAULT_BOARD,    // s5 簡易 5×5 | c10 正版 10×10
+          turnRule: TURN_RULES.KEEP,   // 固定：命中續打
           turn: null,
           firstSeat: 0,
           players: [],
@@ -196,6 +207,7 @@ export class Room {
       key: s.key,
       phase: s.phase,
       turnRule: s.turnRule,
+      boardMode: s.boardMode,
       turn: s.turn,
       full: s.players.length >= MAX_PLAYERS && s.players.every((p) => p.online),
       players: s.players.map((p) => ({
@@ -286,13 +298,8 @@ export class Room {
     const userId = clean(msg.userId, 64);
     console.log("[room]", s.key, "| hello:", name, "players=", s.players.length, "phase=", s.phase);
 
-    // 房間內已經沒有任何玩家 → 重置為全新房間（保留金鑰與戰績存檔）
+    // 房間內已經沒有任何玩家 → 重置為全新房間（保留金鑰與海域模式）
     if (!s.players.length) this.resetRoom(s);
-
-    // 進房時可一併指定回合規則（僅佈陣階段有效）
-    if (s.phase === "setup" && msg.turnRule) {
-      s.turnRule = msg.turnRule === TURN_RULES.KEEP ? TURN_RULES.KEEP : TURN_RULES.ALT;
-    }
 
     let player = s.players.find((p) => clientId && p.clientId === clientId);
     let event = "join";
@@ -356,6 +363,11 @@ export class Room {
       }
     }
 
+    // 進房時可一併指定海域模式（僅佈陣階段有效）
+    if (s.phase === "setup" && msg.boardMode && BOARDS[msg.boardMode] && msg.boardMode !== s.boardMode) {
+      this.changeBoardMode(s, msg.boardMode);
+    }
+
     att.playerId = player.id;
     ws.serializeAttachment(att);
 
@@ -373,8 +385,9 @@ export class Room {
       server: { now: Date.now(), maxPlayers: MAX_PLAYERS },
       rules: {
         turnRule: s.turnRule,
+        boardMode: s.boardMode,
         phase: s.phase,
-        shipLen: SHIP_LEN
+        shipLen: boardConfig(s.boardMode).ships
       }
     });
 
@@ -388,18 +401,19 @@ export class Room {
 
   async onReady(ws, att, msg) {
     const s = await this.load();
+    const cfg = boardConfig(s.boardMode);
     const p = this.playerOf(s, att.playerId);
     console.log("[room]", s.key, "| ready:", p ? p.name : att.playerId, "phase=", s.phase, "players=", JSON.stringify(s.players.map((x) => x.name + ":" + x.ready)));
     if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
     if (s.phase !== "setup") return this.err(ws, ERR.BAD_PHASE, "現在不能重新佈陣");
-    const v = validateFleet(msg.fleet);
+    const v = validateFleet(msg.fleet, cfg);
     if (!v.ok) return this.err(ws, ERR.INVALID_FLEET, v.reason);
 
-    p.fleet = sanitizeFleet(msg.fleet);
+    p.fleet = sanitizeFleet(msg.fleet, cfg);
     p.ready = true;
     await this.save(s);
 
-    if (s.players.length === MAX_PLAYERS && s.players.every((x) => x.ready && x.fleet && Object.keys(x.fleet).length === SHIP_IDS.length)) {
+    if (s.players.length === MAX_PLAYERS && s.players.every((x) => x.ready && x.fleet && Object.keys(x.fleet).length === shipIdsOf(cfg).length)) {
       s.phase = "battle";
       s.startedAt = Date.now();
       s.shots = [];
@@ -423,6 +437,7 @@ export class Room {
 
   async onFire(ws, att, msg) {
     const s = await this.load();
+    const cfg = boardConfig(s.boardMode);
     const p = this.playerOf(s, att.playerId);
     if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
     if (s.phase !== "battle") return this.err(ws, ERR.BAD_PHASE, "戰局尚未開始");
@@ -430,7 +445,7 @@ export class Room {
 
     const cell = String(msg.cell || "");
     const [r, c] = parseCell(cell);
-    if (!cell || !inBounds(r, c)) return this.err(ws, ERR.INVALID_CELL, "座標無效");
+    if (!cell || !inBounds(r, c, cfg.n)) return this.err(ws, ERR.INVALID_CELL, "座標無效");
 
     s.fired[p.id] = s.fired[p.id] || {};
     if (s.fired[p.id][cell] !== undefined) return this.err(ws, ERR.ALREADY_FIRED, "這個位置已經打過了");
@@ -443,16 +458,16 @@ export class Room {
     }
 
     // 判定命中
-    const shipId = this.shipAt(opp.fleet, r, c);
+    const shipId = this.shipAt(opp.fleet, r, c, cfg);
     let result = MARK.MISS;
     let sunk = null;
 
     if (shipId) {
       result = MARK.HIT;
       s.fired[p.id][cell] = MARK.HIT;
-      if (isShipSunk(opp.fleet, shipId, s.fired[p.id])) {
-        sunk = { id: shipId, r: opp.fleet[shipId].r, c: opp.fleet[shipId].c, d: opp.fleet[shipId].d, len: SHIP_LEN[shipId] };
-        for (const [rr, cc] of cellsOf(opp.fleet[shipId], SHIP_LEN[shipId])) {
+      if (isShipSunk(opp.fleet, shipId, s.fired[p.id], cfg)) {
+        sunk = { id: shipId, r: opp.fleet[shipId].r, c: opp.fleet[shipId].c, d: opp.fleet[shipId].d, len: cfg.ships[shipId] };
+        for (const [rr, cc] of cellsOf(opp.fleet[shipId], cfg.ships[shipId])) {
           s.fired[p.id][cellKey(rr, cc)] = MARK.SUNK;
         }
       }
@@ -464,17 +479,15 @@ export class Room {
     s.shots = s.shots || [];
     s.shots.push({ by: p.id, cell, result, at: Date.now() });
 
-    // 結算
-    const sink = allShipsSunk(opp.fleet, s.fired[p.id]);
+    // 結算（回合規則固定：命中續打 — 命中或擊沉可繼續開火）
+    const sink = allShipsSunk(opp.fleet, s.fired[p.id], cfg);
     let over = null;
     if (sink.all) {
       over = { winner: p.id, loser: opp.id, at: Date.now(), reason: "all_sunk" };
       s.over = over;
       s.phase = "over";
-    } else if (s.turnRule === TURN_RULES.KEEP && result >= MARK.HIT) {
-      // 命中續打：維持回合
-    } else {
-      s.turn = opp.id;
+    } else if (result < MARK.HIT) {
+      s.turn = opp.id; // 落空才換人
     }
 
     await this.save(s);
@@ -512,11 +525,12 @@ export class Room {
 
   async onAnnotate(ws, att, msg) {
     const s = await this.load();
+    const cfg = boardConfig(s.boardMode);
     const p = this.playerOf(s, att.playerId);
     if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
     const cell = String(msg.cell || "");
     const [r, c] = parseCell(cell);
-    if (!cell || !inBounds(r, c)) return this.err(ws, ERR.INVALID_CELL, "座標無效");
+    if (!cell || !inBounds(r, c, cfg.n)) return this.err(ws, ERR.INVALID_CELL, "座標無效");
     const value = Math.max(0, Math.min(3, Number(msg.value) || 0));
 
     s.marks[p.id] = s.marks[p.id] || {};
@@ -550,11 +564,13 @@ export class Room {
     const s = await this.load();
     const p = this.playerOf(s, att.playerId);
     if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
-    if (s.phase !== "setup") return this.err(ws, ERR.BAD_PHASE, "遊戲開始後不能更換規則");
-    const rule = msg.turnRule === TURN_RULES.KEEP ? TURN_RULES.KEEP : TURN_RULES.ALT;
-    s.turnRule = rule;
-    await this.save(s);
-    await this.broadcastState();
+    if (s.phase !== "setup") return this.err(ws, ERR.BAD_PHASE, "遊戲開始後不能更換海域模式");
+    if (!msg || !BOARDS[msg.boardMode]) return this.err(ws, ERR.BAD_REQUEST, "未知的海域模式");
+    if (s.boardMode !== msg.boardMode) {
+      this.changeBoardMode(s, msg.boardMode);
+      await this.save(s);
+      await this.broadcastState();
+    }
   }
 
   async onRematch(ws, att, msg) {
@@ -569,23 +585,17 @@ export class Room {
     }
 
     const keepFleet = msg.keepFleet !== false;
-    s.fired = {};
-    s.marks = {};
-    s.shots = [];
-    s.startedAt = 0;
-    s.archivedId = "";
-    s.over = null;
-    for (const x of s.players) {
-      s.fired[x.id] = {};
-      s.marks[x.id] = {};
-      if (!keepFleet) {
+    this.resetMatch(s, false);
+    if (!keepFleet) {
+      for (const x of s.players) {
         x.fleet = {};
         x.ready = false;
       }
     }
-    const allReady = s.players.length === MAX_PLAYERS && s.players.every((x) => x.ready && Object.keys(x.fleet || {}).length === SHIP_IDS.length);
-    s.phase = allReady ? "battle" : "setup";
+    const cfg = boardConfig(s.boardMode);
     s.firstSeat = (s.firstSeat + 1) % Math.max(1, s.players.length);
+    const allReady = s.players.length === MAX_PLAYERS && s.players.every((x) => x.ready && Object.keys(x.fleet || {}).length === shipIdsOf(cfg).length);
+    s.phase = allReady ? "battle" : "setup";
     const first = s.players[s.firstSeat % Math.max(1, s.players.length)];
     s.turn = s.phase === "battle" && first ? first.id : null;
     if (s.phase === "battle") s.startedAt = Date.now();
@@ -640,6 +650,15 @@ export class Room {
     s.startedAt = 0;
     s.archivedId = "";
     s.over = null;
+  }
+
+  /** 更換海域模式：雙方船艦與佈陣狀態全部作廢（僅佈陣階段呼叫） */
+  changeBoardMode(s, id) {
+    s.boardMode = boardConfig(id).id;
+    for (const x of s.players) {
+      x.fleet = {};
+      x.ready = false;
+    }
   }
 
   /* ---------- 離線清理 ---------- */
@@ -721,6 +740,7 @@ export class Room {
   /* ---------- 檢視（每位玩家看到的內容） ---------- */
 
   viewFor(s, playerId) {
+    const cfg = boardConfig(s.boardMode);
     const me = this.playerOf(s, playerId);
     const opp = this.opponentOf(s, playerId);
     const myFired = s.fired[playerId] || {};
@@ -731,7 +751,8 @@ export class Room {
     const enemyBoard = buildEnemyBoard({
       fired: myFired,
       enemyFleet,
-      marks: s.marks[playerId] || {}
+      marks: s.marks[playerId] || {},
+      cfg
     });
 
     // 自己海域收到的炮擊（對手的 fired 記錄）
@@ -741,17 +762,17 @@ export class Room {
     // 擊沉的船（自動標註）
     const sunkShips = [];
     if (opp) {
-      for (const id of SHIP_IDS) {
+      for (const id of shipIdsOf(cfg)) {
         if (!enemyFleet[id]) continue;
-        if (isShipSunk(enemyFleet, id, myFired)) {
-          sunkShips.push({ id, r: enemyFleet[id].r, c: enemyFleet[id].c, d: enemyFleet[id].d, len: SHIP_LEN[id] });
+        if (isShipSunk(enemyFleet, id, myFired, cfg)) {
+          sunkShips.push({ id, r: enemyFleet[id].r, c: enemyFleet[id].c, d: enemyFleet[id].d, len: cfg.ships[id] });
         }
       }
     }
 
     // 自動標註（擊沉船周圍一圈落空），排除已經實際開火過的格子
     const autoMarks = [];
-    for (const k of autoMissCells(enemyFleet, myFired)) {
+    for (const k of autoMissCells(enemyFleet, myFired, cfg)) {
       if (myFired[k] === undefined) autoMarks.push(k);
     }
 
@@ -763,6 +784,7 @@ export class Room {
       v: PROTOCOL_VERSION,
       key: s.key,
       phase: s.phase,
+      boardMode: s.boardMode,
       turnRule: s.turnRule,
       turn: s.turn,
       over: s.over,
@@ -807,11 +829,11 @@ export class Room {
     return s.players.find((p) => p.id !== id) || null;
   }
 
-  shipAt(fleet, r, c) {
-    for (const id of SHIP_IDS) {
+  shipAt(fleet, r, c, cfg) {
+    for (const id of shipIdsOf(cfg)) {
       const p = fleet[id];
       if (!p) continue;
-      for (const [rr, cc] of cellsOf(p, SHIP_LEN[id])) {
+      for (const [rr, cc] of cellsOf(p, cfg.ships[id])) {
         if (rr === r && cc === c) return id;
       }
     }
@@ -839,9 +861,9 @@ function publicPlayer(p) {
   return { id: p.id, name: p.name, seat: p.seat, ready: p.ready, online: p.online };
 }
 
-function sanitizeFleet(fleet) {
+function sanitizeFleet(fleet, cfg) {
   const out = {};
-  for (const id of SHIP_IDS) {
+  for (const id of shipIdsOf(cfg)) {
     const p = fleet[id];
     if (!p) continue;
     out[id] = { r: p.r | 0, c: p.c | 0, d: p.d === "V" ? "V" : "H" };

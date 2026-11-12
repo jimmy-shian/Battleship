@@ -2,18 +2,18 @@
  * 海戰棋 — 通訊協定定義
  * 前端 (public/js/*) 與 Cloudflare Worker (worker/*) 共用，純常數、無副作用。
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /* ---------- Client → Server ---------- */
 export const C2S = {
-  HELLO: "hello",        // { key, name, clientId, userId, v }
+  HELLO: "hello",        // { key, name, clientId, userId, boardMode, v }
   READY: "ready",        // { fleet }
   UNREADY: "unready",    // {}
   FIRE: "fire",          // { cell }
   ANNOTATE: "annotate",  // { cell, value }  value: 0 清除 / 1 落空 / 2 命中 / 3 擊沉
   CLEAR_MARKS: "clearMarks", // {}
   CHAT: "chat",          // { text }
-  SETTINGS: "settings",  // { turnRule }
+  SETTINGS: "settings",  // { boardMode }（回合規則固定為命中續打）
   REMATCH: "rematch",    // { keepFleet }
   RESET: "reset",        // {} 重開對局（任何階段皆可，保留船艦、需重新鎖定）
   PING: "ping"           // { at }
@@ -35,8 +35,8 @@ export const S2C = {
 
 /* ---------- 回合規則 ---------- */
 export const TURN_RULES = {
-  ALT: "alt",   // 輪流交替：每次開火後換人
-  KEEP: "keep"  // 命中續打：命中或擊沉則繼續，未中才換人
+  ALT: "alt",   // （已停用）輪流交替
+  KEEP: "keep"  // 命中續打：命中或擊沉則繼續，未中才換人（本版固定採用）
 };
 
 /* ---------- 錯誤碼 ---------- */

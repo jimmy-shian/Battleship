@@ -11,13 +11,16 @@
  */
 import { BattleComm, normalizeRoomKey } from "./comm.mjs";
 import { browserId } from "./user.js";
-import { S2C, C2S, TURN_RULES } from "./protocol.js";
+import { S2C, C2S } from "./protocol.js";
 import { enhanceSelect } from "./select.js";
 import {
-  N,
-  COLS,
-  SHIP_LEN,
-  SHIP_IDS,
+  BOARDS,
+  DEFAULT_BOARD,
+  boardConfig,
+  shipIdsOf,
+  shipNameOf,
+  colsOf,
+  cellLabel,
   MARK,
   cellKey,
   parseCell,
@@ -28,8 +31,6 @@ import {
 } from "./rules.js";
 
 const $ = (s) => document.querySelector(s);
-const LEN = SHIP_LEN;
-const IDS = SHIP_IDS;
 
 /* ---------- 圖示 ---------- */
 const I = (p) => `<svg viewBox="0 0 24 24">${p}</svg>`;
@@ -73,6 +74,11 @@ let D = null, press = null;
 let comm = null;
 let lastFired = null;
 
+/* ---------- 海域模式（s5 簡易 5×5 / c10 正版 10×10） ---------- */
+let cfg = null;                              // 目前海域設定
+let LEN = {};                                // cfg.ships
+let IDS = [];                                // 船艦 id 清單
+
 const own = $("#own"), en = $("#enemy");
 const ownEls = {}, enEls = {};
 
@@ -115,20 +121,23 @@ const params = new URLSearchParams(location.search);
 const roomKey = normalizeRoomKey(params.get("key") || readLS("bs.room.key", ""));
 const playerName = (params.get("name") || readLS("bs.room.name", "") || "").slice(0, 16);
 const serverUrl = params.get("server") || readLS("bs.server.url", "") || "";
-const wantRule = params.get("rule") || readLS("bs.room.rule", "") || "";
+/** 海域模式：網址帶的 mode > 上次使用 > 簡易 5×5 */
+const wantMode = BOARDS[params.get("mode")] ? params.get("mode")
+  : BOARDS[readLS("bs.room.mode", "")] ? readLS("bs.room.mode", "")
+  : DEFAULT_BOARD;
 
 // 網址不帶暱稱；若這台電腦還沒有暱稱，先回大廳請對方填寫
 if (!playerName) {
   const q = new URLSearchParams();
   if (roomKey) q.set("key", roomKey);
   if (serverUrl) q.set("server", serverUrl);
-  if (wantRule) q.set("rule", wantRule);
+  q.set("mode", wantMode);
   location.replace("index.html" + (q.toString() ? "?" + q.toString() : ""));
   await new Promise(() => {}); // 停止本模組後續執行，等待跳轉
 }
 
 $("#roomChip").textContent = roomKey || "未指定房間";
-const ruleCtl = enhanceSelect($("#ruleSel"), { compact: true });
+const modeCtl = enhanceSelect($("#modeSel"), { compact: true });
 $("#helpBtn").innerHTML = ICON.help;
 $("#closeBtn").innerHTML = ICON.close;
 $("#mn").innerHTML = ICON.close;
@@ -159,18 +168,18 @@ $("#roomChip").onclick = async () => {
 
 function frame(b, els, mk) {
   b.append(document.createElement("div"));
-  [...COLS].forEach((c) => {
+  colsOf(cfg).forEach((c) => {
     const e = document.createElement("div");
     e.className = "co";
     e.textContent = c;
     b.append(e);
   });
-  for (let r = 0; r < N; r++) {
+  for (let r = 0; r < cfg.n; r++) {
     const l = document.createElement("div");
     l.className = "co";
     l.textContent = r + 1;
     b.append(l);
-    for (let c = 0; c < N; c++) {
+    for (let c = 0; c < cfg.n; c++) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "cell";
@@ -183,18 +192,98 @@ function frame(b, els, mk) {
   }
 }
 
+/** 依目前海域模式重建兩塊棋盤（切換模式時呼叫） */
+function buildBoards() {
+  own.innerHTML = "";
+  en.innerHTML = "";
+  for (const k in ownEls) delete ownEls[k];
+  for (const k in enEls) delete enEls[k];
+  D = null;
+  press = null;
+  for (const b of [own, en]) {
+    b.style.gridTemplateColumns = `26px repeat(${cfg.n}, minmax(0, 1fr))`;
+    b.classList.toggle("big", cfg.n > 5);
+  }
+  frame(own, ownEls, (b, r, c) => {
+    b.addEventListener("pointerdown", (e) => {
+      if (locked) return;
+      const s = shipAt()[cellKey(r, c)];
+      press = { k: cellKey(r, c), x: e.clientX, y: e.clientY, id: !s ? undefined : s.id, grab: s ? s.i : 0, from: "board" };
+      if (s) { sel = s.id; updOwn(); }
+    });
+  });
+  frame(en, enEls, (b, r, c) => {
+    const k = cellKey(r, c);
+    b.addEventListener("click", () => {
+      if (!state) return;
+      if (annotateMode) {
+        const cur = (state.marks && state.marks[k]) || 0;
+        const next = (cur + 1) % 4;
+        comm.annotate(k, next);
+        return;
+      }
+      if (state.phase !== "battle") { toast("戰局尚未開始"); return; }
+      if (!state.canFire) { toast("還不是你的回合"); return; }
+      const v = (state.enemy.board && state.enemy.board[k]) || 0;
+      if (v !== 0) { toast("這個位置已經打過了"); return; }
+      if (!comm.fire(k)) toast("尚未連線，請稍候再試");
+    });
+  });
+}
+
+/* ---------- 海域模式切換 ---------- */
+
+const fleetKey = () => "bs.local.fleet." + roomKey + "." + cfg.id;
+
+/** 讀取這台電腦在「目前海域模式」下編輯中的船隊（並過濾掉不合用的位置） */
+function loadLocalFleet() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(fleetKey()) || "null");
+    if (saved && typeof saved === "object") {
+      const out = {};
+      for (const id of IDS) {
+        const p = saved[id];
+        if (!p) continue;
+        const pos = { r: p.r | 0, c: p.c | 0, d: p.d === "V" ? "V" : "H" };
+        if (cellsOf(pos, LEN[id]).every(([r, c]) => inBounds(r, c, cfg.n))) out[id] = pos;
+      }
+      return out;
+    }
+  } catch (e) {}
+  return {};
+}
+
+/** 套用新的海域模式：重建棋盤與船艦區、載入該模式的本地船隊 */
+function applyMode(id) {
+  const next = boardConfig(id);
+  if (cfg && next.id === cfg.id) return;
+  cfg = next;
+  LEN = cfg.ships;
+  IDS = shipIdsOf(cfg);
+  sel = IDS[0];
+  fleet = loadLocalFleet();
+  locked = false;
+  pendingLock = false;
+  buildPicker();
+  buildBoards();
+  updOwn();
+  updEn();
+}
+
 /* ---------- 船隊擺放（沿用單機版互動） ---------- */
 
-const shipAt = () => fleetCellMap(fleet);
+const shipAt = () => fleetCellMap(fleet, cfg);
 
 function validPlace(id, p) {
   const cs = cellsOf(p, LEN[id]);
-  if (!cs.every(([r, c]) => inBounds(r, c))) return false;
+  if (!cs.every(([r, c]) => inBounds(r, c, cfg.n))) return false;
+  // 簡易 5×5：不可相鄰（含斜角）；正版 10×10：照官方規則允許緊鄰，只禁重疊
+  const minDist = cfg.adjacent ? 0 : 1;
   for (const o in fleet) {
     if (o === id) continue;
     for (const [a, b] of cellsOf(fleet[o], LEN[o])) {
       for (const [r, c] of cs) {
-        if (Math.max(Math.abs(a - r), Math.abs(b - c)) <= 1) return false;
+        if (Math.max(Math.abs(a - r), Math.abs(b - c)) <= minDist) return false;
       }
     }
   }
@@ -252,26 +341,23 @@ const shipSvg = (len, h = 28) =>
     (_, i) => `<path d="M${28 * (i + 1)} 6v16" stroke="#3b82f6" stroke-opacity=".4"/>`
   ).join("")}</svg>`;
 
-$("#picker").innerHTML = IDS.map((id) => `<div class="po" data-id="${id}">${shipSvg(LEN[id], 16)}</div>`).join("");
+/** 依目前海域模式重建船艦區（含船名標籤：正版用艦名、簡易用長度） */
+function buildPicker() {
+  $("#picker").innerHTML = IDS.map((id) => {
+    const name = shipNameOf(cfg, id);
+    return `<div class="po" data-id="${id}" title="${name}（${LEN[id]} 格）">${shipSvg(LEN[id], 16)}<span class="pn">${name}</span></div>`;
+  }).join("");
+}
 
-frame(own, ownEls, (b, r, c) => {
-  b.addEventListener("pointerdown", (e) => {
-    if (locked) return;
-    const s = shipAt()[cellKey(r, c)];
-    press = { k: cellKey(r, c), x: e.clientX, y: e.clientY, id: !s ? undefined : s.id, grab: s ? s.i : 0, from: "board" };
-    if (s) { sel = s.id; updOwn(); }
-  });
+/* 從船艦區拖出（事件委派，模式切換後仍有效） */
+$("#picker").addEventListener("pointerdown", (e) => {
+  const p = e.target.closest(".po");
+  if (!p || locked) return;
+  e.preventDefault();
+  sel = p.dataset.id;
+  press = { x: e.clientX, y: e.clientY, id: sel, grab: LEN[sel] >> 1, from: "picker" };
+  updOwn();
 });
-
-document.querySelectorAll(".po").forEach((p) =>
-  p.addEventListener("pointerdown", (e) => {
-    if (locked) return;
-    e.preventDefault();
-    sel = p.dataset.id;
-    press = { x: e.clientX, y: e.clientY, id: sel, grab: LEN[sel] >> 1, from: "picker" };
-    updOwn();
-  })
-);
 
 const ghost = $("#ghost");
 
@@ -315,7 +401,7 @@ function moveDrag(e) {
     D.t = best;
     const sh = best || { r: o === "V" ? r - grab : r, c: o === "H" ? c - grab : c, d: o };
     if (best && best.d !== D.d) { D.d = best.d; ghost.style.flexDirection = D.d === "V" ? "column" : "row"; }
-    const cl = cellsOf(sh, len).filter(([a, b]) => inBounds(a, b)).map(([a, b]) => cellKey(a, b));
+    const cl = cellsOf(sh, len).filter(([a, b]) => inBounds(a, b, cfg.n)).map(([a, b]) => cellKey(a, b));
     cl.forEach((k) => ownEls[k].classList.add(best ? "pv" : "bad"));
     D.pv = cl;
   }
@@ -358,13 +444,17 @@ function rotate() {
   const p = fleet[sel], len = LEN[sel];
   if (!p || len < 2) return;
   const toV = p.d === "H";
-  let cands;
-  if (len === 3) {
-    cands = [toV ? { r: p.r - 1, c: p.c + 1, d: "V" } : { r: p.r + 1, c: p.c - 1, d: "H" }];
-  } else {
-    cands = toV
-      ? [{ r: p.r, c: p.c + 1 }, { r: p.r, c: p.c }, { r: p.r - 1, c: p.c + 1 }, { r: p.r - 1, c: p.c }].map((x) => ({ ...x, d: "V" }))
-      : [{ r: p.r, c: p.c - 1 }, { r: p.r, c: p.c }, { r: p.r + 1, c: p.c - 1 }, { r: p.r + 1, c: p.c }].map((x) => ({ ...x, d: "H" }));
+  // 以船身中心為軸旋轉，並在原位附近微調（0 / ±1 格）找出合法位置
+  const half = (len - 1) >> 1;
+  const cr = p.r + (p.d === "V" ? half : 0);
+  const cc = p.c + (p.d === "H" ? half : 0);
+  const cands = [];
+  for (const dr of [0, -1, 1]) {
+    for (const dc of [0, -1, 1]) {
+      cands.push(toV
+        ? { r: cr - half + dr, c: cc + dc, d: "V" }
+        : { r: cr + dr, c: cc - half + dc, d: "H" });
+    }
   }
   const ok = cands.find((x) => validPlace(sel, x));
   if (!ok) {
@@ -384,7 +474,7 @@ function rotate() {
 $("#rotBtn").onclick = rotate;
 
 function localFleet() {
-  writeLS("bs.local.fleet." + roomKey, JSON.stringify(fleet));
+  writeLS(fleetKey(), JSON.stringify(fleet));
   updOwn();
 }
 
@@ -397,7 +487,7 @@ function updEn() {
   const phase = state ? state.phase : "setup";
   const over = !!(state && state.phase === "over");
   // 結算時公開對方船位
-  const reveal = over && state.enemy && state.enemy.fleet ? fleetCellMap(state.enemy.fleet) : {};
+  const reveal = over && state.enemy && state.enemy.fleet ? fleetCellMap(state.enemy.fleet, cfg) : {};
 
   for (const k in enEls) {
     const el = enEls[k];
@@ -415,24 +505,6 @@ function updEn() {
   $("#clrMarks").disabled = !state || !Object.keys(state.marks || {}).length;
   $("#enemyHint").textContent = over ? "本局結束" : canFire ? "點擊格子開火" : annotateMode ? "標註模式" : "等待回合";
 }
-
-frame(en, enEls, (b, r, c) => {
-  const k = cellKey(r, c);
-  b.addEventListener("click", () => {
-    if (!state) return;
-    if (annotateMode) {
-      const cur = (state.marks && state.marks[k]) || 0;
-      const next = (cur + 1) % 4;
-      comm.annotate(k, next);
-      return;
-    }
-    if (state.phase !== "battle") { toast("戰局尚未開始"); return; }
-    if (!state.canFire) { toast("還不是你的回合"); return; }
-    const v = (state.enemy.board && state.enemy.board[k]) || 0;
-    if (v !== 0) { toast("這個位置已經打過了"); return; }
-    if (!comm.fire(k)) toast("尚未連線，請稍候再試");
-  });
-});
 
 $("#annotateBtn").onclick = () => {
   annotateMode = !annotateMode;
@@ -453,9 +525,12 @@ $("#resetBtn").onclick = () => {
   toast("已重開對局");
 };
 
-$("#ruleSel").addEventListener("change", (e) => {
-  comm.setTurnRule(e.target.value);
-  toast("回合規則已更新");
+/* ---------- 海域模式選擇 ---------- */
+
+$("#modeSel").addEventListener("change", (e) => {
+  if (!comm || !comm.connected) { toast("尚未連線"); return; }
+  comm.setBoardMode(e.target.value);
+  toast("海域模式已更新：" + boardConfig(e.target.value).label);
 });
 
 /* ---------- 鎖定 / 清空 ---------- */
@@ -592,13 +667,13 @@ function renderPlayers() {
   if (!(state.players || []).length) {
     box.innerHTML = '<span class="wait">等待玩家加入…</span>';
   }
-  // 回合規則
-  const sel = $("#ruleSel");
-  if (sel.value !== state.turnRule) {
-    sel.value = state.turnRule;
-    ruleCtl.refresh(); // 同步自訂下拉顯示
+  // 海域模式（僅佈陣階段可更改）
+  const modeSel = $("#modeSel");
+  if (state.boardMode && modeSel.value !== state.boardMode) {
+    modeSel.value = state.boardMode;
+    modeCtl.refresh(); // 同步自訂下拉顯示
   }
-  $("#ruleBox").style.display = state.phase === "setup" ? "" : "none";
+  $("#modeBox").style.display = state.phase === "setup" ? "" : "none";
 }
 
 function renderStatus() {
@@ -708,7 +783,7 @@ function connect() {
     name: playerName,
     clientId: sessionId(),
     userId: browserId(),
-    turnRule: wantRule || null,
+    boardMode: cfg.id,   // 進房時帶上希望的海域模式（僅佈陣階段有效）
     autoReconnect: true,
     debug: false
   });
@@ -742,6 +817,8 @@ function connect() {
   comm.on(S2C.STATE, (e) => {
     state = e.detail;
     window.__bs = { state, comm }; // 除錯用：可在主控台檢視最新狀態
+    // 海域模式與伺服器不一致（例如對手更換）→ 重建棋盤與船艦區
+    if (state.boardMode && (!cfg || state.boardMode !== cfg.id)) applyMode(state.boardMode);
     updAll();
     if (state.phase === "over" && !$("#modal").classList.contains("show")) showResult();
     if (state.phase === "battle" && lastFired) { lastFired = null; }
@@ -758,9 +835,9 @@ function connect() {
   comm.on(S2C.FIRE, (e) => {
     const d = e.detail;
     const mine = d.by === (state && state.you);
-    const [r, c] = parseCell(d.cell);
-    const label = COLS[c] + (r + 1);
-    const word = d.result === 1 ? "落空" : d.result === 2 ? "命中" : "擊沉";
+    const label = cellLabel(d.cell);
+    const sunkName = d.sunk ? "（" + shipNameOf(cfg, d.sunk.id) + "）" : "";
+    const word = d.result === 1 ? "落空" : d.result === 2 ? "命中" : "擊沉" + sunkName;
     addChat((mine ? "你" : d.byName) + " 攻擊 " + label + " → " + word, "", mine, false);
     if (d.sunk) flashSunk(d.sunk);
   });
@@ -862,10 +939,10 @@ const TOUR = [
   { t: "歡迎來到雲端海戰棋", d: "兩個人只要輸入相同的房號就能連線對戰，開火結果由伺服器自動判定，不必自己報數。跟著導覽認識每個區塊，隨時可跳過。" },
   { el: "#roomChip", t: "房號：點一下就能複製", d: "全系統固定三間房（Room1／Room2／Room3）。點房號即可複製，貼給朋友，兩人選同一間就會對戰；每間同時一場（2 人）。" },
   { el: "#own", t: "我的海域", d: "把船艦拖進格子擺放，橫放直放皆可，不可重疊或相鄰（含斜角）。對方的炮擊結果會即時顯示在這裡。" },
-  { el: "#picker", t: "船艦區", d: "共四艘：3 格 ×1、2 格 ×2、1 格 ×1。點選後拖到海域擺放，已擺放的會變淡。" },
+  { el: "#picker", t: "船艦區", d: "簡易 5×5 有 4 艘（3、2、2、1 格）；正版 10×10 有 5 艘（5、4、3、3、2 格）。點選後拖到海域擺放，已擺放的會變淡。" },
   { el: "#lockShip", t: "鎖定船艦", d: "四艘全部擺好後按這裡鎖定，鎖定後無法移動；等對手也準備好就會自動開戰。" },
   { el: "#enemy", t: "敵方海域：點擊開火", d: "輪到你就點格子開火，點下去就會自動標記落空、命中或擊沉（不用自己切換標記），並同步給雙方畫面。" },
-  { el: "#enemy", t: "圖示怎麼看", d: "看示範：落空、命中、擊沉三種圖示會輪流顯示。擊沉後船周圍一圈會自動標為落空。", demo: true },
+  { el: "#enemy", t: "圖示怎麼看", d: "看示範：落空、命中、擊沉三種圖示會輪流顯示。擊沉後周圍一圈自動標為落空（簡易 5×5 適用；正版 10×10 允許緊鄰，不自動標註周圍）。", demo: true },
   { el: "#annotateBtn", t: "標註模式", d: "想記錄推測的落空／命中／擊沉時開啟它；這只是自己的筆記，不影響伺服器的判定。" },
   { el: "#chatFab", t: "右下角通訊", d: "點開氣泡可以和對手傳話；有新訊息時會跳出小提示，點一下就會展開。" },
   { el: "#archBtn", t: "戰績存檔", d: "每局結束會自動存檔。點這裡（或結果視窗的「戰績存檔」）可以查詢歷史對局並回放。" },
@@ -989,12 +1066,14 @@ window.addEventListener("resize", () => { if ($("#tour").classList.contains("sho
 
 /* ---------- 啟動 ---------- */
 
-// 還原上次編輯中的船隊（僅自己可見）
-try {
-  const saved = JSON.parse(localStorage.getItem("bs.local.fleet." + roomKey) || "null");
-  if (saved && typeof saved === "object") fleet = saved;
-} catch (e) {}
-
+// 依網址／上次使用的海域模式初始化棋盤，並還原該模式下編輯中的船隊（僅自己可見）
+cfg = boardConfig(wantMode);
+LEN = cfg.ships;
+IDS = shipIdsOf(cfg);
+sel = IDS[0];
+fleet = loadLocalFleet();
+buildPicker();
+buildBoards();
 updOwn();
 updEn();
 connect();

@@ -18,8 +18,8 @@
     <button class="ib danger" id="leaveBtn" data-tip="離開房間" aria-label="離開房間"></button>
     <aside id="tut"><div class="bar"><b>遊戲規則</b><button class="ib" id="closeBtn" aria-label="關閉"></button></div><div class="body">
       <div class="rule"><b>目標</b><p>雙方輪流猜對方船艦的位置，最先擊沉對方所有船艦的人獲勝。</p></div>
-      <div class="rule"><b>船艦</b><p>5×5 海域，每人 4 艘：3 格 ×1、2 格 ×2、1 格 ×1，共 8 格。橫放或直放，不可重疊，也不可相鄰（含斜角）。</p></div>
-      <div class="rule"><b>回合</b><p>由系統分配回合，點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
+      <div class="rule"><b>船艦</b><p>簡易 5×5：4 艘（3、2、2、1 格），不可重疊或相鄰（含斜角）。正版 10×10：5 艘（5、4、3、3、2 格），照官方規則只禁重疊、允許緊鄰。橫放或直放，不可超出海域。</p></div>
+      <div class="rule"><b>回合</b><p>規則固定為「命中續打」：命中或擊沉可繼續開火，落空才換人。點擊「敵方海域」的格子直接開火，點下去就會自動標記結果（落空 / 命中 / 擊沉）並同步給雙方。</p></div>
       <div class="rule"><b>敵方海域圖示</b>
         <div class="lg">
           <div><i class="sw"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="#7c8ba1"/></svg></i>落空：這一格沒有船</div>
@@ -34,7 +34,7 @@
           <div><i class="sw"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#d2707b" stroke-width="2.6" stroke-linecap="round"/></svg></i>我方船艦被命中的那一格</div>
         </div>
       </div>
-      <div class="rule"><b>自動標註</b><p>擊沉一艘船後，其周圍一圈會自動標為落空，不需手動記憶。</p></div>
+      <div class="rule"><b>自動標註</b><p>簡易 5×5：擊沉一艘船後，其周圍一圈會自動標為落空（因為船不可相鄰）。正版 10×10：允許緊鄰，周圍可能有其他船，故不自動標註。</p></div>
       <div class="rule"><b>重開對局</b><p>敵方海域下方的「重開」按鈕可在任何階段重置戰局（船艦保留，需重新鎖定）；新玩家進房時，殘留的對局也會自動重算。</p></div>
       <div class="rule"><b>手動標註</b><p>開啟「標註模式」後可自行記錄推測的落空 / 命中 / 擊沉，不影響系統判定結果。</p></div>
       <div class="rule"><b>通訊</b><p>右下角的氣泡是通訊視窗；有新訊息時會跳出小提示，點一下即可展開。</p></div>
@@ -60,10 +60,10 @@
     <div class="head">
       <h2>我的海域</h2>
       <span class="tag" id="ownHint"></span>
-      <div class="rulewrap" id="ruleBox" title="輪流交替：每次開火後換人；命中續打：命中或擊沉則繼續">
-        <select id="ruleSel" aria-label="回合規則">
-          <option value="alt">輪流交替</option>
-          <option value="keep">命中續打</option>
+      <div class="rulewrap" id="modeBox" title="海域模式：簡易 5×5 或正版 10×10（規則固定為命中續打）">
+        <select id="modeSel" aria-label="海域模式">
+          <option value="s5">簡易 5×5</option>
+          <option value="c10">正版 10×10</option>
         </select>
       </div>
     </div>
