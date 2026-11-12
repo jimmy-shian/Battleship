@@ -85,11 +85,11 @@ function toggleAdv() {
   $("#advBody").hidden = !open;
 }
 
-$("#helpBtn").onclick = () => { $("#help").hidden = !$("#help").hidden; };
-$("#closeHelp").onclick = () => { $("#help").hidden = true; };
+$("#helpBtn").onclick = () => { $("#help").classList.toggle("open"); };
+$("#closeHelp").onclick = () => { $("#help").classList.remove("open"); };
 document.addEventListener("pointerdown", (e) => {
-  if ($("#help").hidden) return;
-  if (!e.target.closest("#help, #helpBtn")) $("#help").hidden = true;
+  if (!$("#help").classList.contains("open")) return;
+  if (!e.target.closest("#help, #helpBtn")) $("#help").classList.remove("open");
 });
 
 /* ---------- 房間（全系統固定三間：Room1／Room2／Room3） ---------- */

@@ -34,9 +34,8 @@
           <div><i class="sw"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="#d2707b" stroke-width="2.6" stroke-linecap="round"/></svg></i>我方船艦被命中的那一格</div>
         </div>
       </div>
-      <div class="rule"><b>自動標註</b><p>簡易 5×5：擊沉一艘船後，其周圍一圈會自動標為落空（因為船不可相鄰）。正版 10×10：允許緊鄰，周圍可能有其他船，故不自動標註。</p></div>
+      <div class="rule"><b>自動標註</b><p>簡易 5×5：擊沉一艘船後，其周圍一圈會自動標為落空（因為船不可相鄰）。正版 10×10：允許緊鄰，周圍可能有其他船，故不自動標註。開火結果（落空／命中／擊沉）一律由系統自動判定並同步，無需手動記錄。</p></div>
       <div class="rule"><b>重開對局</b><p>敵方海域下方的「重開」按鈕可在任何階段重置戰局（船艦保留，需重新鎖定）；新玩家進房時，殘留的對局也會自動重算。</p></div>
-      <div class="rule"><b>手動標註</b><p>開啟「標註模式」後可自行記錄推測的落空 / 命中 / 擊沉，不影響系統判定結果。</p></div>
       <div class="rule"><b>通訊</b><p>右下角的氣泡是通訊視窗；有新訊息時會跳出小提示，點一下即可展開。</p></div>
       <div class="rule"><b>介面導覽</b><p><a href="#" id="replayTour">重新播放介面導覽</a>，一步一步複習每個區塊的用法。</p></div>
     </div></aside>
@@ -80,8 +79,6 @@
     <div class="head"><h2>敵方海域</h2><span class="tag" id="enemyHint"></span></div>
     <div id="enemy" class="board"></div>
     <div class="tools">
-      <button class="ib" id="annotateBtn" data-tip="標註模式" aria-label="標註模式"></button>
-      <button class="ib" id="clrMarks" data-tip="清除標註" aria-label="清除標註"></button>
       <button class="ib" id="resetBtn" data-tip="重開對局" aria-label="重開對局"></button>
     </div>
   </section>

@@ -4,7 +4,7 @@
  * 職責：
  *   1. 建立／維護 WebSocket 通訊（BattleComm 模組）
  *   2. 船艦擺放（沿用單機版的拖放互動）
- *   3. 開火、標註、回合提示、自動標註與結算
+ *   3. 開火、回合提示、自動標註與結算（結果由系統判定，無需手動標記）
  *   4. 房內通訊（文字）
  *
  * 注意：本頁刻意不含「紀錄」區塊，連線版不需要歷史戰績。
@@ -46,7 +46,6 @@ const ICON = {
   min: I('<path d="M6 15l6-6 6 6"/>'),
   close: I('<path d="M6 6l12 12M18 6L6 18"/>'),
   check: I('<path d="M5 12l5 5L20 7"/>'),
-  pencil: I('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/>'),
   exit: I('<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h9"/>'),
   chat: I('<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.5 9.5 0 0 1-2.9-.4L4 21l1.6-4.2A8.2 8.2 0 0 1 3.6 11 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4Z"/>'),
   archive: I('<path d="M3 7h18v3H3z"/><path d="M5 10v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9"/><path d="M10 14h4"/>')
@@ -67,7 +66,6 @@ let locked = false;                          // 是否已鎖定佈陣
 let pendingLock = false;                     // 鎖定訊息已送出、等待伺服器確認
 let sel = "3";
 let state = null;                            // 伺服器快照
-let annotateMode = false;
 let wasDisconnected = false;
 let roomFull = false;
 let D = null, press = null;
@@ -144,8 +142,6 @@ $("#mn").innerHTML = ICON.close;
 $("#rotBtn").innerHTML = ICON.rot;
 $("#lockShip").innerHTML = ICON.unlock;
 $("#clrOwn").innerHTML = ICON.trash;
-$("#clrMarks").innerHTML = ICON.trash;
-$("#annotateBtn").innerHTML = ICON.pencil;
 $("#leaveBtn").innerHTML = ICON.exit;
 $("#chatFabIco").innerHTML = ICON.chat;
 $("#chatClose").innerHTML = ICON.close;
@@ -216,12 +212,6 @@ function buildBoards() {
     const k = cellKey(r, c);
     b.addEventListener("click", () => {
       if (!state) return;
-      if (annotateMode) {
-        const cur = (state.marks && state.marks[k]) || 0;
-        const next = (cur + 1) % 4;
-        comm.annotate(k, next);
-        return;
-      }
       if (state.phase !== "battle") { toast("戰局尚未開始"); return; }
       if (!state.canFire) { toast("還不是你的回合"); return; }
       const v = (state.enemy.board && state.enemy.board[k]) || 0;
@@ -496,23 +486,15 @@ function updEn() {
     el.dataset.v = v;
     el.classList.toggle("auto", auto.has(k));
     el.classList.toggle("fired", v !== 0);
-    el.classList.toggle("aim", canFire && v === 0 && !annotateMode);
+    el.classList.toggle("aim", canFire && v === 0);
     el.classList.toggle("ship", !!reveal[k]);
     const h = CELL_ICON[v] || "";
     if (el._h !== h) { el.innerHTML = h; el._h = h; }
   }
-  $("#annotateBtn").classList.toggle("on", annotateMode);
-  $("#clrMarks").disabled = !state || !Object.keys(state.marks || {}).length;
-  $("#enemyHint").textContent = over ? "本局結束" : canFire ? "點擊格子開火" : annotateMode ? "標註模式" : "等待回合";
+  // 輪到開火時：敵方面板整體外框微亮（不再讓每個格子閃爍）
+  $("#enPanel").classList.toggle("yourturn", canFire);
+  $("#enemyHint").textContent = over ? "本局結束" : canFire ? "點擊格子開火" : "等待回合";
 }
-
-$("#annotateBtn").onclick = () => {
-  annotateMode = !annotateMode;
-  updEn();
-  toast(annotateMode ? "標註模式：點擊格子記錄推測" : "已回到開火模式");
-};
-
-$("#clrMarks").onclick = () => comm.clearMarks();
 
 /* ---------- 重開對局 ---------- */
 
@@ -842,8 +824,6 @@ function connect() {
     if (d.sunk) flashSunk(d.sunk);
   });
 
-  comm.on(S2C.ANNOTATE, () => { /* 由 state 事件統一更新 */ });
-
   comm.on(S2C.CHAT, (e) => {
     const d = e.detail;
     addChat(d.text, d.from, d.fromId === (state && state.you), false, true);
@@ -915,18 +895,18 @@ function sessionId() {
 /* ---------- 其他互動 ---------- */
 
 $("#helpBtn").onclick = () => {
-  const t = $("#tut");
-  t.hidden = !t.hidden;
+  $("#tut").classList.toggle("open");
 };
-$("#closeBtn").onclick = () => { $("#tut").hidden = true; };
+$("#closeBtn").onclick = () => { $("#tut").classList.remove("open"); };
 document.addEventListener("pointerdown", (e) => {
   const t = $("#tut");
-  if (t.hidden) return;
-  if (!e.target.closest("#tut, #helpBtn")) t.hidden = true;
+  if (!t.classList.contains("open")) return;
+  if (!e.target.closest("#tut, #helpBtn")) t.classList.remove("open");
 });
 
 $("#leaveBtn").onclick = () => {
-  // 房號固定（全系統三間），離開只是回到大廳
+  // 房號固定（全系統三間），離開只是回到大廳；座位會自動釋出
+  if (!confirm("確定要離開房間嗎？\n離開後座位會釋出，進行中的對局將無法繼續。")) return;
   if (comm) comm.close();
   location.href = "index.html";
 };
@@ -942,8 +922,8 @@ const TOUR = [
   { el: "#picker", t: "船艦區", d: "簡易 5×5 有 4 艘（3、2、2、1 格）；正版 10×10 有 5 艘（5、4、3、3、2 格）。點選後拖到海域擺放，已擺放的會變淡。" },
   { el: "#lockShip", t: "鎖定船艦", d: "四艘全部擺好後按這裡鎖定，鎖定後無法移動；等對手也準備好就會自動開戰。" },
   { el: "#enemy", t: "敵方海域：點擊開火", d: "輪到你就點格子開火，點下去就會自動標記落空、命中或擊沉（不用自己切換標記），並同步給雙方畫面。" },
-  { el: "#enemy", t: "圖示怎麼看", d: "看示範：落空、命中、擊沉三種圖示會輪流顯示。擊沉後周圍一圈自動標為落空（簡易 5×5 適用；正版 10×10 允許緊鄰，不自動標註周圍）。", demo: true },
-  { el: "#annotateBtn", t: "標註模式", d: "想記錄推測的落空／命中／擊沉時開啟它；這只是自己的筆記，不影響伺服器的判定。" },
+  { el: "#enemy", t: "圖示怎麼看", d: "看示範：落空、命中、擊沉三種圖示會輪流顯示，結果由系統自動判定並同步。擊沉後周圍一圈自動標為落空（簡易 5×5 適用；正版 10×10 允許緊鄰，不自動標註周圍）。", demo: true },
+  { el: "#resetBtn", t: "重開對局", d: "任何階段都能重置戰局：船艦保留，但需重新鎖定。新玩家進房時，殘留的對局也會自動重算。" },
   { el: "#chatFab", t: "右下角通訊", d: "點開氣泡可以和對手傳話；有新訊息時會跳出小提示，點一下就會展開。" },
   { el: "#archBtn", t: "戰績存檔", d: "每局結束會自動存檔。點這裡（或結果視窗的「戰績存檔」）可以查詢歷史對局並回放。" },
   { el: "#helpBtn", t: "教學面板", d: "隨時點這裡查看完整規則，也可以重新播放這個介面導覽。" }
@@ -1040,8 +1020,8 @@ function tourPos() {
 
 function startTour() {
   ti = 0;
-  tourTut = $("#tut").hidden;
-  $("#tut").hidden = true;
+  tourTut = $("#tut").classList.contains("open");
+  $("#tut").classList.remove("open");
   $("#tour").classList.add("show");
   tourPos();
 }
@@ -1052,7 +1032,7 @@ function endTour() {
   stopDemo();
   $("#tour").classList.remove("show");
   if (tourTut !== null) {
-    $("#tut").hidden = tourTut;
+    $("#tut").classList.toggle("open", tourTut);
     tourTut = null;
   }
   writeLS("bs.tour.seen", "1");

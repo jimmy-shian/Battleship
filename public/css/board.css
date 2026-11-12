@@ -81,10 +81,25 @@ header { flex-wrap: wrap; }
 .cell[data-v="3"] { background: #96434b; }
 #enemy .cell.ship[data-v="3"] { background: #96434b; }
 
-#enemy .cell.aim { box-shadow: inset 0 0 0 2.5px var(--acc); animation: aimPulse 1.6s ease-in-out infinite; }
+/* ---------- 開火提示（輪到你時） ---------- */
+/* 可開火的格子：不再整片閃爍，僅保留游標與 hover 微亮 */
+#enemy .cell.aim { box-shadow: none; animation: none; }
+@media (hover: hover) {
+  #enemy .cell.aim:hover { background: #3b82f626; }
+}
+/* 輪到開火時：敵方面板整體外框微亮 */
+#enPanel.yourturn { animation: panelGlow 2.4s ease-in-out infinite; }
+@keyframes panelGlow {
+  0%, 100% { box-shadow: 0 2px 14px #0f172a0f, 0 0 0 1.5px #3b82f63b; }
+  50% { box-shadow: 0 2px 14px #0f172a0f, 0 0 0 2.5px #3b82f66e, 0 0 16px #3b82f62b; }
+}
 #enemy .cell.auto { box-shadow: inset 0 0 0 2px #94a3b899; }
 #enemy .cell.fired { cursor: default; }
 #enemy .cell.sunkflash { animation: sunkFlash .6s ease-out; }
+
+/* ---------- 大海域（10×10）微調 ---------- */
+.board.big { gap: 3px; }
+.board.big .co { font-size: .8rem; }
 
 /* ---------- 右下角通訊氣泡 ---------- */
 main { padding-bottom: 76px; }
@@ -183,8 +198,14 @@ main { padding-bottom: 76px; }
   width: min(310px, calc(100vw - 28px)); max-height: min(74vh, 540px);
   background: var(--panel); border-radius: 16px; box-shadow: 0 8px 30px #0f172a38;
   display: flex; flex-direction: column; overflow: hidden;
+  /* 預設收合；開合帶過渡動畫 */
+  opacity: 0; transform: translateY(-8px) scale(.98); visibility: hidden; pointer-events: none;
+  transition: opacity .2s ease, transform .22s ease, visibility 0s linear .22s;
 }
-#tut[hidden] { display: none; }
+#tut.open {
+  opacity: 1; transform: none; visibility: visible; pointer-events: auto;
+  transition: opacity .2s ease, transform .24s cubic-bezier(.2, .9, .3, 1.15), visibility 0s;
+}
 #tut .bar { display: flex; align-items: center; padding: 4px 4px 4px 14px; font-size: .95rem; }
 #tut .bar b { flex: 1; }
 #tut .ib { width: 32px; height: 32px; }
@@ -226,4 +247,6 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 @media (prefers-reduced-motion: reduce) {
   #tourSpot, #tourCard { transition: none; }
   #enemy .cell.demo { animation: none; }
+  #enPanel.yourturn { animation: none; box-shadow: 0 0 0 2px #3b82f655; }
+  #tut { transition: none; }
 }
