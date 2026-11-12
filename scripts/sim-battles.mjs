@@ -37,7 +37,7 @@ function sleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
 class Agent {
   constructor(room, name) {
     this.room = room;
-    this.name = name;
+    this.name = name.slice(0, 16); // 伺服器暱稱上限 16 字
     this.you = null;
     this.st = null;
     this.wins = 0;

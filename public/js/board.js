@@ -574,16 +574,15 @@ function updateBadge() {
   }
 }
 
-/** 新訊息小提示（右下角浮出，數秒後自動消失） */
+/** 新訊息小提示（右下角浮出，數秒後自動消失）；對話框開啟時不顯示，避免擋住對話框 */
 function notifyChat(who, text) {
-  if (!chatOpen) {
-    unread++;
-    updateBadge();
-    const fab = $("#chatFab");
-    fab.classList.remove("ping");
-    void fab.offsetWidth;
-    fab.classList.add("ping");
-  }
+  if (chatOpen) return; // 對話框開著：使用者看得到訊息，不需要懸浮通知
+  unread++;
+  updateBadge();
+  const fab = $("#chatFab");
+  fab.classList.remove("ping");
+  void fab.offsetWidth;
+  fab.classList.add("ping");
   const n = $("#chatNote");
   n.textContent = "";
   const w = document.createElement("span");
@@ -618,6 +617,9 @@ function addChat(text, who, mine, sys, note) {
 $("#chatFab").onclick = () => setChatOpen(!chatOpen);
 $("#chatClose").onclick = () => setChatOpen(false);
 $("#chatNote").onclick = () => setChatOpen(true);
+
+// 本局結束時，點狀態列的「本局結束 · 點此再看結果」可重新打開結算視窗
+$("#turnText").onclick = () => { if (state && state.phase === "over") showResult(); };
 
 $("#chatForm").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -675,12 +677,14 @@ function renderStatus() {
     text.textContent = "未連線";
   }
 
-  if (!state) { turn.textContent = "—"; return; }
+  if (!state) { turn.textContent = "—"; turn.style.cursor = ""; return; }
 
   if (state.phase === "over") {
     turn.className = "turn";
-    turn.textContent = "本局結束";
+    turn.textContent = "本局結束 · 點此再看結果";
+    turn.style.cursor = "pointer";
   } else if (state.phase === "setup") {
+    turn.style.cursor = "";
     turn.className = "turn wait";
     const opp = (state.players || []).find((p) => !p.isYou);
     turn.textContent = locked ? (opp && opp.ready ? "準備完成，開始！" : "等待對手佈陣") : "請擺好船艦並鎖定";
@@ -759,6 +763,8 @@ function connect() {
     return;
   }
 
+  let prevPhase = null; // 上一份 state 的階段（結算視窗只在 battle→over 時彈出）
+
   comm = new BattleComm({
     url: serverUrl || null,
     key: roomKey,
@@ -802,7 +808,10 @@ function connect() {
     // 海域模式與伺服器不一致（例如對手更換）→ 重建棋盤與船艦區
     if (state.boardMode && (!cfg || state.boardMode !== cfg.id)) applyMode(state.boardMode);
     updAll();
-    if (state.phase === "over" && !$("#modal").classList.contains("show")) showResult();
+    // 結算視窗只在「自己參與的這局」由戰鬥轉為結束時彈出一次；
+    // 進入已結束的殘局（state 一來就是 over）不彈，避免蓋住佈陣畫面
+    if (state.phase === "over" && prevPhase === "battle" && !$("#modal").classList.contains("show")) showResult();
+    prevPhase = state.phase;
     if (state.phase === "battle" && lastFired) { lastFired = null; }
   });
 
@@ -831,6 +840,7 @@ function connect() {
 
   comm.on(S2C.REMATCH, () => {
     locked = false;
+    $("#modal").classList.remove("show"); // 伺服器重置（再戰／新玩家接手）時關閉結算視窗
     addChat("新的一局開始了！", "", false, true);
   });
 
