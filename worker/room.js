@@ -30,7 +30,8 @@ import {
 } from "../public/js/rules.js";
 
 const MAX_PLAYERS = 2;
-const ROOM_TTL_MS = 6 * 60 * 60 * 1000; // 房間閒置 6 小時後自動清除
+const ROOM_TTL_MS = 6 * 60 * 60 * 1000;  // 房間閒置 6 小時後自動清除
+const LEFT_GRACE_MS = 15 * 1000;         // 離線寬限：超過仍未歸就釋出座位
 
 const clean = (s, max) => String(s == null ? "" : s).trim().slice(0, max || 24);
 const normalizeKey = (k) => String(k == null ? "" : k).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 48);
@@ -48,7 +49,13 @@ export class Room {
     if (!this._loading) {
       this._loading = (async () => {
         const s = await this.state.storage.get("room");
-        if (s) return s;
+        if (s) {
+          // 舊版資料相容：已離線但沒有 leftAt 的玩家，以房間最後更新時間回填，讓 sweep 能準時釋出其座位
+          for (const p of s.players || []) {
+            if (!p.online && !p.leftAt) p.leftAt = s.updatedAt || Date.now();
+          }
+          return s;
+        }
         const fresh = {
           v: 1,
           key: "",
@@ -77,7 +84,9 @@ export class Room {
     s.updatedAt = Date.now();
     this._loading = Promise.resolve(s);
     await this.state.storage.put("room", s);
-    await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+    // 有人離線待清理 → 縮短 alarm，準時跑 sweep；否則維持 TTL 清理
+    const anyOffline = (s.players || []).some((x) => !x.online);
+    await this.state.storage.setAlarm(Date.now() + (anyOffline ? LEFT_GRACE_MS + 1000 : ROOM_TTL_MS));
   }
 
   async alarm() {
@@ -85,8 +94,12 @@ export class Room {
     if (Date.now() - (s.updatedAt || 0) > ROOM_TTL_MS) {
       await this.state.storage.deleteAll();
       this._loading = null;
-    } else {
-      await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+      return;
+    }
+    const changed = await this.sweep(s);
+    if (!changed) {
+      const anyOffline = (s.players || []).some((x) => !x.online);
+      await this.state.storage.setAlarm(Date.now() + (anyOffline ? LEFT_GRACE_MS + 1000 : ROOM_TTL_MS));
     }
   }
 
@@ -136,6 +149,8 @@ export class Room {
     s.players = s.players.filter((x) => x.id !== p.id);
     delete s.fired[p.id];
     delete s.marks[p.id];
+    if (s.players.length < MAX_PLAYERS && s.phase !== "setup") this.resetMatch(s, false);
+    if (!s.players.length) this.resetRoom(s);
     await this.save(s);
     this.broadcast({ t: S2C.PLAYER, event: "leave", player: publicPlayer(p) });
     await this.broadcastState();
@@ -175,6 +190,8 @@ export class Room {
       s.key = key;
       await this.save(s);
     }
+    // 大廳輪詢房間概況時，順便清掉逾時未歸的玩家（房間顯示即時淨空）
+    await this.sweep(s);
     return Response.json({
       key: s.key,
       phase: s.phase,
@@ -249,6 +266,7 @@ export class Room {
       case C2S.CHAT: return this.onChat(ws, att, msg);
       case C2S.SETTINGS: return this.onSettings(ws, att, msg);
       case C2S.REMATCH: return this.onRematch(ws, att, msg);
+      case C2S.RESET: return this.onReset(ws, att);
       case C2S.PING:
         return this.sendTo(ws, { t: S2C.PONG, at: msg.at || Date.now() });
       default:
@@ -268,6 +286,9 @@ export class Room {
     const userId = clean(msg.userId, 64);
     console.log("[room]", s.key, "| hello:", name, "players=", s.players.length, "phase=", s.phase);
 
+    // 房間內已經沒有任何玩家 → 重置為全新房間（保留金鑰與戰績存檔）
+    if (!s.players.length) this.resetRoom(s);
+
     // 進房時可一併指定回合規則（僅佈陣階段有效）
     if (s.phase === "setup" && msg.turnRule) {
       s.turnRule = msg.turnRule === TURN_RULES.KEEP ? TURN_RULES.KEEP : TURN_RULES.ALT;
@@ -275,11 +296,13 @@ export class Room {
 
     let player = s.players.find((p) => clientId && p.clientId === clientId);
     let event = "join";
+    let matchReset = false;
 
     if (player) {
-      // 重連：認回原座位
+      // 重連：認回原座位（船隊、佈陣狀態、進行中的戰局全部保留）
       player.name = name;
       player.online = true;
+      player.leftAt = 0;
       if (userId) player.userId = userId;
     } else {
       // 房間數上限：每位使用者最多 3 個房間，超過就請使用者選一個釋出
@@ -297,11 +320,15 @@ export class Room {
 
       const offline = s.players.find((p) => !p.online);
       if (offline) {
-        // 接管離線者的座位
+        // 接管離線者的座位：座位整個重置，不繼承前一位的船隊與佈陣狀態
         player = offline;
         player.name = name;
         player.clientId = clientId;
+        player.userId = userId;
         player.online = true;
+        player.leftAt = 0;
+        player.fleet = {};
+        player.ready = false;
         event = "takeover";
       } else if (s.players.length < MAX_PLAYERS) {
         player = {
@@ -312,13 +339,20 @@ export class Room {
           seat: s.players.length,
           fleet: {},
           ready: false,
-          online: true
+          online: true,
+          leftAt: 0
         };
         s.players.push(player);
       } else {
         this.sendTo(ws, { t: S2C.ERROR, code: ERR.ROOM_FULL, message: "房間人數已滿（最多 2 人）" });
         ws.close(1013, "room full");
         return;
+      }
+
+      // 新座位／接管座位：若上一場對局還掛著（前一位離開後殘留），整場重算
+      if (s.phase !== "setup") {
+        this.resetMatch(s, false);
+        matchReset = true;
       }
     }
 
@@ -343,6 +377,10 @@ export class Room {
         shipLen: SHIP_LEN
       }
     });
+
+    if (matchReset) {
+      this.broadcast({ t: S2C.RESET, reason: "player_change" });
+    }
 
     this.broadcast({ t: S2C.PLAYER, event, player: publicPlayer(player) }, ws);
     await this.broadcastState();
@@ -399,6 +437,7 @@ export class Room {
 
     const opp = this.opponentOf(s, p.id);
     if (!opp) return this.err(ws, ERR.BAD_PHASE, "等待對手加入");
+    if (!opp.online) return this.err(ws, ERR.OPPONENT_NOT_READY, "對手已離線，這局無法繼續，稍候會自動重開");
     if (!opp.ready || !opp.fleet || !Object.keys(opp.fleet).length) {
       return this.err(ws, ERR.OPPONENT_NOT_READY, "對手尚未完成佈陣");
     }
@@ -556,6 +595,84 @@ export class Room {
     await this.broadcastState();
   }
 
+  /** 重開對局：任何階段皆可，保留雙方船艦，但需重新鎖定 */
+  async onReset(ws, att) {
+    const s = await this.load();
+    const p = this.playerOf(s, att.playerId);
+    if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
+    if (s.over && s.archivedId !== String(s.over.at)) {
+      await this.archive(s, s.over); // 先把打完的這局補進存檔
+    }
+    this.resetMatch(s, true);
+    await this.save(s);
+    this.broadcast({ t: S2C.RESET, by: p.name });
+    await this.broadcastState();
+  }
+
+  /* ---------- 對局／房間重置 ---------- */
+
+  /** 重置本場對局：清掉炮擊、標註、回合與結算；fleets 與 ready 依 clearReady 決定 */
+  resetMatch(s, clearReady) {
+    s.fired = {};
+    s.marks = {};
+    s.shots = [];
+    s.startedAt = 0;
+    s.archivedId = "";
+    s.over = null;
+    s.phase = "setup";
+    s.turn = null;
+    for (const x of s.players) {
+      s.fired[x.id] = {};
+      s.marks[x.id] = {};
+      if (clearReady) x.ready = false;
+    }
+  }
+
+  /** 房間淨空 → 回到全新狀態（保留金鑰、海域模式與戰績存檔） */
+  resetRoom(s) {
+    s.phase = "setup";
+    s.turn = null;
+    s.firstSeat = 0;
+    s.players = [];
+    s.fired = {};
+    s.marks = {};
+    s.shots = [];
+    s.startedAt = 0;
+    s.archivedId = "";
+    s.over = null;
+  }
+
+  /* ---------- 離線清理 ---------- */
+
+  /**
+   * 把「離線超過寬限期」的玩家移出房間並釋出座位：
+   *   - 對局無法繼續（少於 2 人）→ 重置為佈陣階段（留下來的人船艦與佈陣狀態保留）。
+   *   - 房間完全淨空 → 整間房重置。
+   * 回傳是否有清理（有清理時已廣播狀態）。
+   */
+  async sweep(s) {
+    const now = Date.now();
+    const gone = s.players.filter((x) => !x.online && x.leftAt && now - (x.leftAt || 0) > LEFT_GRACE_MS);
+    if (!gone.length) return false;
+
+    const ids = new Set(gone.map((x) => x.id));
+    s.players = s.players.filter((x) => !ids.has(x.id));
+    for (const x of gone) {
+      delete s.fired[x.id];
+      delete s.marks[x.id];
+    }
+    if (s.players.length < MAX_PLAYERS && s.phase !== "setup") this.resetMatch(s, false);
+    if (!s.players.length) this.resetRoom(s);
+    await this.save(s);
+
+    for (const x of gone) {
+      this.broadcast({ t: S2C.PLAYER, event: "removed", player: publicPlayer(x) });
+    }
+    await this.broadcastState();
+    console.log("[room]", s.key, "| sweep 移出離線玩家:", gone.map((x) => x.name).join("、"));
+    return true;
+  }
+
   /* ---------- 斷線 ---------- */
 
   async onDisconnect(ws, att) {
@@ -570,6 +687,7 @@ export class Room {
       if (a.playerId === p.id) return;
     }
     p.online = false;
+    p.leftAt = Date.now();
     await this.save(s);
     this.broadcast({ t: S2C.PLAYER, event: "leave", player: publicPlayer(p) });
     await this.broadcastState();

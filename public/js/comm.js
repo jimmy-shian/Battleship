@@ -39,6 +39,7 @@
     CHAT: "chat",
     SETTINGS: "settings",
     REMATCH: "rematch",
+    RESET: "reset",
     PING: "ping"
   };
 
@@ -51,6 +52,7 @@
     ANNOTATE: "annotate",
     CHAT: "chat",
     REMATCH: "rematch",
+    RESET: "reset",
     ERROR: "error",
     PONG: "pong"
   };
@@ -333,6 +335,8 @@
     setTurnRule(rule) { return this.send(C2S.SETTINGS, { turnRule: rule }); }
     /** 請求再戰一局 */
     rematch(keepFleet) { return this.send(C2S.REMATCH, { keepFleet: keepFleet !== false }); }
+    /** 重開對局（任何階段皆可；保留船艦、需重新鎖定） */
+    reset() { return this.send(C2S.RESET); }
 
     /* ---------- 連線維運 ---------- */
 

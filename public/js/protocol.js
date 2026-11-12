@@ -15,6 +15,7 @@ export const C2S = {
   CHAT: "chat",          // { text }
   SETTINGS: "settings",  // { turnRule }
   REMATCH: "rematch",    // { keepFleet }
+  RESET: "reset",        // {} 重開對局（任何階段皆可，保留船艦、需重新鎖定）
   PING: "ping"           // { at }
 };
 
@@ -22,11 +23,12 @@ export const C2S = {
 export const S2C = {
   WELCOME: "welcome",    // { you, key, server, rules }
   STATE: "state",        // 完整戰局快照
-  PLAYER: "player",      // { event: "join"|"leave"|"takeover", player }
+  PLAYER: "player",      // { event: "join"|"leave"|"takeover"|"removed", player }
   FIRE: "fire",          // { by, byName, cell, result, sunk, over }
   ANNOTATE: "annotate",  // { by, cell, value }
   CHAT: "chat",          // { from, text, at }
   REMATCH: "rematch",    // { keepFleet }
+  RESET: "reset",        // { by } 對局已重開（戰局重算，進入佈陣階段）
   ERROR: "error",        // { code, message }
   PONG: "pong"           // { at }
 };

@@ -35,6 +35,7 @@ const IDS = SHIP_IDS;
 const I = (p) => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const ICON = {
   rot: I('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  reset: I('<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 3.5V8H8"/>'),
   undo: I('<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'),
   redo: I('<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>'),
   lock: I('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
@@ -441,6 +442,17 @@ $("#annotateBtn").onclick = () => {
 
 $("#clrMarks").onclick = () => comm.clearMarks();
 
+/* ---------- 重開對局 ---------- */
+
+$("#resetBtn").innerHTML = ICON.reset;
+$("#resetBtn").onclick = () => {
+  if (!comm || !comm.connected) { toast("尚未連線"); return; }
+  if (!state) return;
+  if (!confirm("確定要重開對局嗎？\n雙方船艦會保留，但需重新鎖定。")) return;
+  comm.reset();
+  toast("已重開對局");
+};
+
 $("#ruleSel").addEventListener("change", (e) => {
   comm.setTurnRule(e.target.value);
   toast("回合規則已更新");
@@ -737,8 +749,9 @@ function connect() {
 
   comm.on(S2C.PLAYER, (e) => {
     const p = e.detail.player;
-    if (e.detail.event === "leave") addChat(p.name + " 離線了", "", false, true, true);
+    if (e.detail.event === "leave") addChat(p.name + " 離線了（座位稍後自動釋出）", "", false, true, true);
     else if (e.detail.event === "takeover") addChat(p.name + " 接上了離線的座位", "", false, true, true);
+    else if (e.detail.event === "removed") addChat(p.name + " 已離開，座位釋出", "", false, true, true);
     else addChat(p.name + " 加入了房間", "", false, true, true);
   });
 
@@ -762,6 +775,17 @@ function connect() {
   comm.on(S2C.REMATCH, () => {
     locked = false;
     addChat("新的一局開始了！", "", false, true);
+  });
+
+  comm.on(S2C.RESET, (e) => {
+    // 對局被重開（手動重開或新玩家進入殘留戰局）→ 回到佈陣階段
+    locked = false;
+    pendingLock = false;
+    const by = e.detail && e.detail.by;
+    addChat(by ? by + " 重開了對局，請重新鎖定船艦" : "對局已重算，請重新佈陣", "", false, true, true);
+    $("#modal").classList.remove("show");
+    updOwn();
+    updEn();
   });
 
   comm.on(S2C.ERROR, (e) => {
