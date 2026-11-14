@@ -68,6 +68,7 @@ let sel = "3";
 let state = null;                            // 伺服器快照
 let wasDisconnected = false;
 let roomFull = false;
+let resetDismissedKey = null;                // 已忽略的重開提議（避免重複打擾）
 let D = null, press = null;
 let comm = null;
 let lastFired = null;
@@ -294,6 +295,23 @@ function updOwn() {
     el.classList.toggle("dead", locked);
     el.classList.remove("hit", "miss");
 
+    // 船艦上色＋船頭／船尾標記
+    if (s) {
+      const col = cfg.colors[s.id] || "#93c5fd";
+      el.style.setProperty("--sc", col);
+      el.style.setProperty("--sc-soft", col + "4d");
+      const len = LEN[s.id] || 1;
+      const d = fleet[s.id] ? fleet[s.id].d : "H";
+      el.classList.toggle("bow", s.i === len - 1);
+      el.classList.toggle("stern", s.i === 0 && len > 1);
+      el.classList.toggle("dH", d === "H");
+      el.classList.toggle("dV", d === "V");
+    } else {
+      el.classList.remove("bow", "stern", "dH", "dV");
+      el.style.removeProperty("--sc");
+      el.style.removeProperty("--sc-soft");
+    }
+
     const R = (a, b) => (!same(r + a, c) && !same(r, c + b) ? "11px" : "4px");
     el.style.borderRadius = s ? `${R(-1, -1)} ${R(-1, 1)} ${R(1, 1)} ${R(1, -1)}` : "";
 
@@ -320,22 +338,27 @@ function updOwn() {
   const lb = $("#lockShip");
   lb.innerHTML = locked ? ICON.lock : ICON.unlock;
   lb.classList.toggle("on", locked);
+  lb.classList.toggle("canlock", !locked && IDS.every((id) => fleet[id]));
   lb.disabled = state ? state.phase !== "setup" : false;
   $("#picker").classList.toggle("off", locked);
   own.classList.toggle("locked", locked);
 }
 
-const shipSvg = (len, h = 28) =>
-  `<svg width="${len * h}" height="${h}" viewBox="0 0 ${len * 28} 28"><rect x="1" y="1" width="${len * 28 - 2}" height="26" rx="10" fill="#93c5fd" stroke="#3b82f6" stroke-width="2"/>${Array.from(
-    { length: len - 1 },
-    (_, i) => `<path d="M${28 * (i + 1)} 6v16" stroke="#3b82f6" stroke-opacity=".4"/>`
-  ).join("")}</svg>`;
+/** 船艦剪影 SVG：每艘專屬顏色、船頭尖角、艦橋，含格線 */
+const shipSvg = (id, len) => {
+  const c = cfg.colors[id] || "#93c5fd";
+  const cw = 17, bow = 6, w = len * cw + bow + 4, hh = 20;
+  let seps = "";
+  for (let i = 1; i < len; i++) seps += `<path d="M${3 + i * cw} 6v8" stroke="#0f172a" stroke-opacity=".3"/>`;
+  const bridgeX = Math.round(3 + len * cw * 0.42);
+  return `<svg width="${w}" height="${hh}" viewBox="0 0 ${w} ${hh}"><path d="M4 5 L${2 + len * cw} 5 L${2 + len * cw + bow} 10 L${2 + len * cw} 15 L4 15 Q2 15 2 12.5 L2 7.5 Q2 5 4 5 Z" fill="${c}" stroke="#0f172a" stroke-opacity=".45" stroke-width="1.4"/><rect x="${bridgeX}" y="7" width="5" height="6" rx="1" fill="#0f172a" fill-opacity=".45"/>${seps}</svg>`;
+};
 
-/** 依目前海域模式重建船艦區（含船名標籤：正版用艦名、簡易用長度） */
+/** 依目前海域模式重建船艦區（含船名標籤與專屬配色） */
 function buildPicker() {
   $("#picker").innerHTML = IDS.map((id) => {
     const name = shipNameOf(cfg, id);
-    return `<div class="po" data-id="${id}" title="${name}（${LEN[id]} 格）">${shipSvg(LEN[id], 16)}<span class="pn">${name}</span></div>`;
+    return `<div class="po" data-id="${id}" title="${name}（${LEN[id]} 格）">${shipSvg(id, LEN[id])}<span class="pn">${name}</span></div>`;
   }).join("");
 }
 
@@ -488,6 +511,22 @@ function updEn() {
     el.classList.toggle("fired", v !== 0);
     el.classList.toggle("aim", canFire && v === 0);
     el.classList.toggle("ship", !!reveal[k]);
+    if (reveal[k]) {
+      const col = cfg.colors[reveal[k].id] || "#93c5fd";
+      el.style.setProperty("--sc", col);
+      el.style.setProperty("--sc-soft", col + "4d");
+      const len = LEN[reveal[k].id] || 1;
+      const fd = state.enemy.fleet[reveal[k].id];
+      const d = fd ? fd.d : "H";
+      el.classList.toggle("bow", reveal[k].i === len - 1);
+      el.classList.toggle("stern", reveal[k].i === 0 && len > 1);
+      el.classList.toggle("dH", d === "H");
+      el.classList.toggle("dV", d === "V");
+    } else {
+      el.classList.remove("bow", "stern", "dH", "dV");
+      el.style.removeProperty("--sc");
+      el.style.removeProperty("--sc-soft");
+    }
     const h = CELL_ICON[v] || "";
     if (el._h !== h) { el.innerHTML = h; el._h = h; }
   }
@@ -496,16 +535,58 @@ function updEn() {
   $("#enemyHint").textContent = over ? "本局結束" : canFire ? "點擊格子開火" : "等待回合";
 }
 
-/* ---------- 重開對局 ---------- */
+/* ---------- 重開對局（雙方同意；單人房間直接重開） ---------- */
 
 $("#resetBtn").innerHTML = ICON.reset;
+$("#resetDismiss").innerHTML = ICON.close;
 $("#resetBtn").onclick = () => {
   if (!comm || !comm.connected) { toast("尚未連線"); return; }
   if (!state) return;
-  if (!confirm("確定要重開對局嗎？\n雙方船艦會保留，但需重新鎖定。")) return;
+  const votes = state.resetVotes || [];
+  const onlineCount = (state.players || []).filter((p) => p.online).length;
+  if (votes.includes(state.you)) {
+    if (!confirm("撤回重開對局的請求？")) return;
+    comm.reset();
+    toast("已撤回重開請求");
+    return;
+  }
+  if (onlineCount <= 1) {
+    if (!confirm("重新開始對局？（房間內目前只有你）")) return;
+    comm.reset();
+    return;
+  }
+  if (!confirm("向對手提出重開對局？\n對手同意後才會重開（船艦保留、需重新鎖定）。")) return;
   comm.reset();
-  toast("已重開對局");
+  toast("已送出重開請求，等待對手同意");
 };
+
+$("#resetAgree").onclick = () => {
+  if (!comm || !comm.connected) { toast("尚未連線"); return; }
+  if (state) state.resetVotes = [];
+  syncResetBanner();
+  comm.reset();
+};
+
+$("#resetDismiss").onclick = () => {
+  resetDismissedKey = ((state && state.resetVotes) || []).join(",");
+  syncResetBanner();
+};
+
+/** 依伺服器狀態同步重開提議的按鈕樣式與同意橫幅 */
+function syncResetBanner() {
+  const votes = (state && state.resetVotes) || [];
+  const you = state ? state.you : null;
+  const iVoted = you != null && votes.includes(you);
+  $("#resetBtn").classList.toggle("pending", iVoted);
+  const oppVoted = votes.some((id) => id !== you);
+  const key = votes.join(",");
+  const show = oppVoted && resetDismissedKey !== key;
+  $("#resetBanner").hidden = !show;
+  if (show) {
+    const voter = (state.players || []).find((p) => votes.includes(p.id));
+    $("#resetBannerText").textContent = (voter ? voter.name : "對手") + " 提議重開對局";
+  }
+}
 
 /* ---------- 海域模式選擇 ---------- */
 
@@ -525,7 +606,7 @@ $("#lockShip").onclick = () => {
     updOwn();
     return;
   }
-  const v = validateFleet(fleet);
+  const v = validateFleet(fleet, cfg);
   if (!v.ok) { toast(v.reason); return; }
   // 連線中會先暫存，連線成功後自動補送；完全無法送出時才提示
   if (!comm.ready(fleet)) {
@@ -714,6 +795,7 @@ function updAll() {
   updEn();
   renderPlayers();
   renderStatus();
+  syncResetBanner();
 }
 
 /* ---------- 結果視窗 ---------- */
@@ -845,14 +927,21 @@ function connect() {
   });
 
   comm.on(S2C.RESET, (e) => {
-    // 對局被重開（手動重開或新玩家進入殘留戰局）→ 回到佈陣階段
+    // 對局被重開（雙方同意或單人房間）→ 回到佈陣階段
     locked = false;
     pendingLock = false;
     const by = e.detail && e.detail.by;
     addChat(by ? by + " 重開了對局，請重新鎖定船艦" : "對局已重算，請重新佈陣", "", false, true, true);
+    if (state) state.resetVotes = [];
+    resetDismissedKey = null;
     $("#modal").classList.remove("show");
     updOwn();
     updEn();
+    syncResetBanner();
+  });
+
+  comm.on(S2C.RESET_REQ, (e) => {
+    toast((e.detail.by || "對手") + " 提議重開對局");
   });
 
   comm.on(S2C.ERROR, (e) => {

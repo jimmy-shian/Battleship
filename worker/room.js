@@ -39,6 +39,7 @@ import {
 const MAX_PLAYERS = 2;
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;  // 房間閒置 6 小時後自動清除
 const LEFT_GRACE_MS = 15 * 1000;         // 離線寬限：超過仍未歸就釋出座位
+const RESET_REQ_TTL_MS = 60 * 1000;      // 重開提議有效期：逾時未獲同意自動失效
 
 const clean = (s, max) => String(s == null ? "" : s).trim().slice(0, max || 24);
 const normalizeKey = (k) => String(k == null ? "" : k).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 48);
@@ -59,6 +60,8 @@ export class Room {
         if (s) {
           if (!BOARDS[s.boardMode]) s.boardMode = DEFAULT_BOARD;
           if (s.turnRule !== TURN_RULES.KEEP) s.turnRule = TURN_RULES.KEEP; // 回合規則固定：命中續打
+          if (!Array.isArray(s.resetVotes)) s.resetVotes = [];
+          if (typeof s.resetReqAt !== "number") s.resetReqAt = 0;
           // 舊版資料相容：已離線但沒有 leftAt 的玩家（部署前殘留），
           // 以房間最後更新時間回填，讓 sweep 能準時釋出其座位
           for (const p of s.players || []) {
@@ -82,7 +85,9 @@ export class Room {
           shots: [],        // 開火紀錄（回放／存檔用）
           startedAt: 0,     // 本局開戰時間
           archivedId: "",   // 已成功存檔的對局 ID
-          over: null
+          over: null,
+          resetVotes: [],   // 重開對局提議（玩家 id；雙方同意才重開）
+          resetReqAt: 0     // 提議時間（逾時自動失效）
         };
         await this.state.storage.put("room", fresh);
         return fresh;
@@ -160,6 +165,8 @@ export class Room {
     s.players = s.players.filter((x) => x.id !== p.id);
     delete s.fired[p.id];
     delete s.marks[p.id];
+    s.resetVotes = [];
+    s.resetReqAt = 0;
     if (s.players.length < MAX_PLAYERS && s.phase !== "setup") this.resetMatch(s, false);
     if (!s.players.length) this.resetRoom(s);
     await this.save(s);
@@ -356,7 +363,10 @@ export class Room {
         return;
       }
 
-      // 新座位／接管座位：若上一場對局還掛著（前一位離開後殘留），整場重算
+      // 新座位／接管座位：清掉前任殘留的重開提議
+      s.resetVotes = [];
+      s.resetReqAt = 0;
+      // 若上一場對局還掛著（前一位離開後殘留），整場重算
       if (s.phase !== "setup") {
         this.resetMatch(s, false);
         matchReset = true;
@@ -418,6 +428,8 @@ export class Room {
       s.startedAt = Date.now();
       s.shots = [];
       s.archivedId = "";
+      s.resetVotes = [];
+      s.resetReqAt = 0;
       const first = s.players[s.firstSeat % s.players.length];
       s.turn = first ? first.id : null;
     }
@@ -567,6 +579,12 @@ export class Room {
     if (s.phase !== "setup") return this.err(ws, ERR.BAD_PHASE, "遊戲開始後不能更換海域模式");
     if (!msg || !BOARDS[msg.boardMode]) return this.err(ws, ERR.BAD_REQUEST, "未知的海域模式");
     if (s.boardMode !== msg.boardMode) {
+      // 防干擾：對手已開始擺船或已鎖定時，不得單方面切換海域
+      const others = s.players.filter((x) => x.id !== p.id);
+      if (others.some((x) => x.ready || (x.fleet && Object.keys(x.fleet).length))) {
+        return this.err(ws, ERR.BAD_REQUEST, "對手已在佈陣，無法切換海域（請先與對手溝通）");
+      }
+      this.changeBoardMode(s, msg.boardMode);
       this.changeBoardMode(s, msg.boardMode);
       await this.save(s);
       await this.broadcastState();
@@ -605,18 +623,58 @@ export class Room {
     await this.broadcastState();
   }
 
-  /** 重開對局：任何階段皆可，保留雙方船艦，但需重新鎖定 */
+  /** 重開對局：單人房間立即重開；兩人時需對手同意（再次點擊可撤回提議） */
   async onReset(ws, att) {
     const s = await this.load();
     const p = this.playerOf(s, att.playerId);
     if (!p) return this.err(ws, ERR.NOT_JOINED, "你還沒加入房間");
+    s.resetVotes = Array.isArray(s.resetVotes) ? s.resetVotes : [];
+    this.pruneResetVotes(s);
+
+    // 已提議過 → 再次點擊視為撤回
+    if (s.resetVotes.includes(p.id)) {
+      s.resetVotes = s.resetVotes.filter((id) => id !== p.id);
+      await this.save(s);
+      await this.broadcastState();
+      return;
+    }
+
     if (s.over && s.archivedId !== String(s.over.at)) {
       await this.archive(s, s.over); // 先把打完的這局補進存檔
     }
-    this.resetMatch(s, true);
+
+    s.resetVotes.push(p.id);
+    if (!s.resetReqAt) s.resetReqAt = Date.now();
+
+    const onlineCount = s.players.filter((x) => x.online).length;
+    if (onlineCount <= 1 || s.resetVotes.length >= onlineCount) {
+      // 房間內只有自己（或對手離線）→ 直接重開；否則等對手同意
+      return this.executeReset(s, onlineCount <= 1 ? p.name : "雙方同意");
+    }
+
     await this.save(s);
-    this.broadcast({ t: S2C.RESET, by: p.name });
+    this.broadcast({ t: S2C.RESET_REQ, by: p.name });
     await this.broadcastState();
+  }
+
+  /** 執行重開（雙方同意或單人房間） */
+  async executeReset(s, label) {
+    this.resetMatch(s, true);
+    s.resetVotes = [];
+    s.resetReqAt = 0;
+    await this.save(s);
+    this.broadcast({ t: S2C.RESET, by: label || "" });
+    await this.broadcastState();
+  }
+
+  /** 重開提議逾時未獲同意 → 自動失效；回傳是否有清理 */
+  pruneResetVotes(s) {
+    if (Array.isArray(s.resetVotes) && s.resetVotes.length && Date.now() - (s.resetReqAt || 0) > RESET_REQ_TTL_MS) {
+      s.resetVotes = [];
+      s.resetReqAt = 0;
+      return true;
+    }
+    return false;
   }
 
   /* ---------- 對局／房間重置 ---------- */
@@ -629,6 +687,8 @@ export class Room {
     s.startedAt = 0;
     s.archivedId = "";
     s.over = null;
+    s.resetVotes = [];
+    s.resetReqAt = 0;
     s.phase = "setup";
     s.turn = null;
     for (const x of s.players) {
@@ -655,6 +715,8 @@ export class Room {
   /** 更換海域模式：雙方船艦與佈陣狀態全部作廢（僅佈陣階段呼叫） */
   changeBoardMode(s, id) {
     s.boardMode = boardConfig(id).id;
+    s.resetVotes = [];
+    s.resetReqAt = 0;
     for (const x of s.players) {
       x.fleet = {};
       x.ready = false;
@@ -680,6 +742,8 @@ export class Room {
       delete s.fired[x.id];
       delete s.marks[x.id];
     }
+    s.resetVotes = [];
+    s.resetReqAt = 0;
     if (s.players.length < MAX_PLAYERS && s.phase !== "setup") this.resetMatch(s, false);
     if (!s.players.length) this.resetRoom(s);
     await this.save(s);
@@ -785,6 +849,7 @@ export class Room {
       key: s.key,
       phase: s.phase,
       boardMode: s.boardMode,
+      resetVotes: s.resetVotes || [],
       turnRule: s.turnRule,
       turn: s.turn,
       over: s.over,
@@ -811,6 +876,7 @@ export class Room {
 
   async broadcastState() {
     const s = await this.load();
+    if (this.pruneResetVotes(s)) await this.save(s);
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() || {};
       if (!att.playerId) continue;

@@ -81,6 +81,45 @@ header { flex-wrap: wrap; }
 .cell[data-v="3"] { background: #96434b; }
 #enemy .cell.ship[data-v="3"] { background: #96434b; }
 
+/* ---------- 船艦上色：每艘專屬顏色＋船頭方向標記 ---------- */
+#own .cell.ship { background: var(--sc-soft, var(--ship)); box-shadow: inset 0 0 0 2px var(--sc, #3b82f6aa); }
+#own .cell.ship.sel { box-shadow: inset 0 0 0 2.5px var(--acc); }
+#enemy .cell.ship { background: var(--sc-soft, var(--ship)); box-shadow: inset 0 0 0 2px var(--sc, #3b82f6aa); }
+#enemy .cell.ship[data-v="3"] { background: #96434b; box-shadow: inset 0 0 0 2px #ffffff33; }
+#own .cell.ship.bow::after, #enemy .cell.ship.bow::after {
+  content: ""; position: absolute; width: 32%; height: 32%;
+  border-top: 3px solid rgba(255, 255, 255, .8); border-right: 3px solid rgba(255, 255, 255, .8);
+  transform: rotate(45deg); top: 34%; right: 12%;
+}
+#own .cell.ship.bow.dV::after, #enemy .cell.ship.bow.dV::after {
+  transform: rotate(135deg); top: auto; right: auto; left: 34%; bottom: 12%;
+}
+#own .cell.ship.stern::before, #enemy .cell.ship.stern::before {
+  content: ""; position: absolute; background: rgba(15, 23, 42, .35); border-radius: 2px;
+  width: 12%; height: 56%; left: 10%; top: 22%;
+}
+#own .cell.ship.stern.dV::before, #enemy .cell.ship.stern.dV::before {
+  width: 56%; height: 12%; left: 22%; top: 10%;
+}
+
+/* ---------- 佈陣工具：船艦列與操作列分離 ---------- */
+.tools-stack { flex-direction: column; gap: 8px; }
+.tools-stack .picker { width: 100%; flex-wrap: wrap; }
+.tools-row { display: flex; gap: 6px; justify-content: center; }
+#lockShip.canlock { background: #22c55e26; color: var(--green); }
+
+/* ---------- 重開對局：提議等待與同意橫幅 ---------- */
+#resetBtn.pending { background: #f59e0b26; color: var(--amber); }
+#resetBanner {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  background: #f59e0b1f; border: 1px solid #f59e0b55; border-radius: 12px; padding: 7px 10px;
+  font-size: .8rem; font-weight: 600;
+}
+#resetBanner[hidden] { display: none; }
+#resetBanner span { flex: 1; min-width: 0; }
+#resetBanner .ib { width: 30px; height: 30px; border-radius: 8px; }
+#resetBanner .ib svg { width: 14px; height: 14px; }
+
 /* ---------- 開火提示（輪到你時） ---------- */
 /* 可開火的格子：不再整片閃爍，僅保留游標與 hover 微亮 */
 #enemy .cell.aim { box-shadow: none; animation: none; }
@@ -161,7 +200,7 @@ main { padding-bottom: 76px; }
 
 /* ---------- 訊息氣泡 ---------- */
 .chatlog {
-  max-height: 190px; overflow-y: auto; font-size: .84rem; line-height: 1.5;
+  height: min(200px, 36vh); overflow-y: auto; font-size: .84rem; line-height: 1.5;
   display: flex; flex-direction: column; gap: 5px; padding: 2px 1px;
   user-select: text; -webkit-user-select: text;
 }

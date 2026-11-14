@@ -29,6 +29,7 @@ export const S2C = {
   CHAT: "chat",          // { from, text, at }
   REMATCH: "rematch",    // { keepFleet }
   RESET: "reset",        // { by } 對局已重開（戰局重算，進入佈陣階段）
+  RESET_REQ: "resetReq", // { by } 對手提議重開對局（等待我方同意）
   ERROR: "error",        // { code, message }
   PONG: "pong"           // { at }
 };

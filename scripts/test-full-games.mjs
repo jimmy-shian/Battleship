@@ -237,8 +237,11 @@ ok(r2.completed && P1.st.phase === "over", "第二場完整打完（含中途離
 arc = await archive();
 ok(arc.count === 2, "戰績累計 2 筆");
 
-step("局 1 ⑧ 使用者重啟局（reset：任何階段可重開、船艦保留、需重新鎖定）");
-P1.comm.send("reset");
+step("局 1 ⑧ 使用者重啟局（reset：需雙方同意、船艦保留、需重新鎖定）");
+P1.comm.send("reset"); // P1 提議
+await sleep(700);
+ok(P1.st.phase === "battle", "僅一方提議：對局仍在進行（未重算）");
+P2.comm.send("reset"); // P2 同意
 await waitCond(() => P1.st.phase === "setup", 5000, "reset 回佈陣");
 await waitCond(() => P2.st.phase === "setup", 5000, "P2 同步到 reset");
 ok(P1.st.phase === "setup" && P2.st.phase === "setup", "雙方都回到佈陣階段");
@@ -284,7 +287,9 @@ ok(arc.count === 3, "戰績累計 3 筆");
 
 /* ---------------- 局 2：正版 10×10 ---------------- */
 step("局 2（正版 10×10）① reset 後切換海域模式");
-P1.comm.send("reset");
+P1.comm.send("reset"); // P1 提議
+await sleep(700);
+P3.comm.send("reset"); // P3 同意
 await waitCond(() => P1.st.phase === "setup", 5000, "reset");
 P1.comm.setBoardMode("c10");
 await waitCond(() => P1.st.boardMode === "c10" && P3.st.boardMode === "c10", 5000, "雙方切換到 10×10");

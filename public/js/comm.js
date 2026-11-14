@@ -53,6 +53,7 @@
     CHAT: "chat",
     REMATCH: "rematch",
     RESET: "reset",
+    RESET_REQ: "resetReq",
     ERROR: "error",
     PONG: "pong"
   };

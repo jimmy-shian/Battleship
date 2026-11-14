@@ -67,16 +67,23 @@
       </div>
     </div>
     <div id="own" class="board"></div>
-    <div class="tools">
+    <div class="tools tools-stack">
       <div class="picker" id="picker"></div>
-      <button class="ib" id="lockShip" data-tip="鎖定船艦" aria-label="鎖定船艦"></button>
-      <button class="ib" id="rotBtn" data-tip="旋轉" aria-label="旋轉"></button>
-      <button class="ib" id="clrOwn" data-tip="清空" aria-label="清空"></button>
+      <div class="tools-row">
+        <button class="ib" id="lockShip" data-tip="鎖定船艦" aria-label="鎖定船艦"></button>
+        <button class="ib" id="rotBtn" data-tip="旋轉" aria-label="旋轉"></button>
+        <button class="ib" id="clrOwn" data-tip="清空" aria-label="清空"></button>
+      </div>
     </div>
   </section>
 
   <section class="panel" id="enPanel">
     <div class="head"><h2>敵方海域</h2><span class="tag" id="enemyHint"></span></div>
+    <div id="resetBanner" hidden>
+      <span id="resetBannerText"></span>
+      <button class="btn sm good" id="resetAgree" type="button">同意重開</button>
+      <button class="ib" id="resetDismiss" aria-label="忽略"></button>
+    </div>
     <div id="enemy" class="board"></div>
     <div class="tools">
       <button class="ib" id="resetBtn" data-tip="重開對局" aria-label="重開對局"></button>
